@@ -144,10 +144,9 @@ function isOverlayEnabled() {
 
 function shouldRenderOverlay(combat, sides) {
   if (!hasConfiguredEntries(sides)) return false;
-  if (game.system?.id === "dnd5e") return true;
   if (isCombatStarted(combat)) return true;
 
-  return false;
+  return Boolean(getCurrentScene());
 }
 
 function scheduleOverlayRefresh({ force = false, delay = 0, sides } = {}) {
