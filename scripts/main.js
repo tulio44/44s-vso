@@ -42,8 +42,9 @@ Hooks.on("updateToken", refreshVSOverlay);
 Hooks.on("getSceneControlButtons", addSceneControlButtons);
 Hooks.on("renderTokenHUD", addDefeatedHudButton);
 
-function refreshVSOverlay() {
+function refreshVSOverlay(options = {}) {
   const combat = game.combat;
+  const force = options?.force === true;
 
   if (!isOverlayEnabled() || !combat?.started) {
     removeVSOverlay();
@@ -52,7 +53,7 @@ function refreshVSOverlay() {
     return;
   }
 
-  if (Date.now() < suppressOverlayRefreshUntil && !pendingNewUuids.size) {
+  if (!force && Date.now() < suppressOverlayRefreshUntil && !pendingNewUuids.size) {
     configApp?.render(false);
     return;
   }
@@ -176,8 +177,6 @@ function renderVSOverlay(combat) {
   root.innerHTML = `
     <div class="vs-overlay-vignette"></div>
     <div class="vs-overlay-fx">
-      <div class="vs-fire vs-fire-left"></div>
-      <div class="vs-fire vs-fire-right"></div>
       <div class="vs-impact-burst"></div>
     </div>
     <div class="vs-overlay-frame" aria-hidden="true">
@@ -309,13 +308,13 @@ async function toggleAssignedEntryHidden(side, uuid) {
 function setAssignedEntryHidden(side, uuid, hidden) {
   if (hidden) {
     playSlotExitAnimation(uuid, side).finally(() => {
-      persistAssignedEntryState(side, uuid, { hidden: true });
+      persistAssignedEntryState(side, uuid, { hidden: true }, undefined, { suppressRefresh: false });
     });
     return;
   }
 
   pendingNewUuids.add(uuid);
-  persistAssignedEntryState(side, uuid, { hidden: false });
+  persistAssignedEntryState(side, uuid, { hidden: false }, undefined, { suppressRefresh: false, newUuid: uuid });
 }
 
 async function updateAssignedEntry(uuid, updates) {
@@ -335,14 +334,17 @@ async function persistDefeatedState(uuid, defeated, combatant = findCombatantByU
   if (combatant) await combatant.setFlag(MODULE_ID, FLAG_DEFEATED, defeated);
 }
 
-async function persistAssignedEntryState(side, uuid, updates, combatant = findCombatantByUuid(uuid)) {
+async function persistAssignedEntryState(side, uuid, updates, combatant = findCombatantByUuid(uuid), options = {}) {
+  const suppressRefresh = options.suppressRefresh !== false;
   const sides = getCombatSides();
   const entry = sides[side]?.find((candidate) => candidate.uuid === uuid);
   if (!entry) return;
 
   Object.assign(entry, updates);
-  suppressOverlayRefresh();
+  if (suppressRefresh) suppressOverlayRefresh();
   await setCombatSides(sides);
+  if (options.newUuid) pendingNewUuids.add(options.newUuid);
+  if (!suppressRefresh) refreshVSOverlay({ force: true });
 
   if ("defeated" in updates && combatant) {
     suppressOverlayRefresh();
@@ -599,6 +601,7 @@ async function playDefeatedAnimation(uuid) {
         { transform: "translateX(0)" }
       ],
       {
+        delay: 80,
         duration: 520,
         easing: "ease-out"
       }
@@ -606,7 +609,7 @@ async function playDefeatedAnimation(uuid) {
     panel.animate(
       [
         { filter: "brightness(1) grayscale(0)" },
-        { filter: "brightness(1.45) grayscale(0.15)", offset: 0.2 },
+        { filter: "brightness(1.22) grayscale(0.15)", offset: 0.2 },
         { filter: "brightness(0.55) grayscale(1)" }
       ],
       {
@@ -647,7 +650,7 @@ async function playRecoveryAnimation(uuid) {
     panel.animate(
       [
         { filter: "brightness(0.55) grayscale(1)" },
-        { filter: "brightness(1.85) grayscale(0.15)", offset: 0.46 },
+        { filter: "brightness(1.28) grayscale(0.15)", offset: 0.46 },
         { filter: "brightness(1) grayscale(0)" }
       ],
       {
@@ -674,6 +677,7 @@ function triggerRecoveryPulse(slot) {
     {
       duration: 640,
       easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+      fill: "both",
       pseudoElement: "::after"
     }
   ).finished.catch(() => {});
@@ -685,14 +689,14 @@ function triggerDefeatedPulse(slot) {
 
   return panel.animate(
     [
-      { opacity: 0, transform: "scale(0.78)" },
-      { opacity: 0.55, transform: "scale(1.02)", offset: 0.38 },
-      { opacity: 0, transform: "scale(1.12)" }
+      { opacity: 0, transform: "translateX(-126%) scaleX(0.75)" },
+      { opacity: 0.92, transform: "translateX(-18%) scaleX(1)", offset: 0.42 },
+      { opacity: 0, transform: "translateX(122%) scaleX(0.82)" }
     ],
     {
-      duration: 420,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fill: "none",
+      duration: 300,
+      easing: "cubic-bezier(0.55, 0, 0.28, 1)",
+      fill: "both",
       pseudoElement: "::after"
     }
   ).finished.catch(() => {});
