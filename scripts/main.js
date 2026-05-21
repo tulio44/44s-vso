@@ -55,6 +55,9 @@ let pendingNewUuids = new Set();
 let pendingCompactionSides = new Set();
 let suppressOverlayRefreshUntil = 0;
 let overlayGeneration = 0;
+let scheduledOverlayRefreshId = null;
+let scheduledOverlayRefreshOptions = {};
+let lastOverlaySignature = "";
 const preloadedImages = new Map();
 
 Hooks.once("init", () => {
@@ -91,18 +94,24 @@ Hooks.on("createCombatant", refreshVSOverlay);
 Hooks.on("updateCombatant", refreshVSOverlay);
 Hooks.on("deleteCombatant", refreshVSOverlay);
 Hooks.on("updateToken", refreshVSOverlay);
+Hooks.on("canvasReady", () => {
+  refreshVSOverlay({ force: true });
+  configApp?.render(false);
+});
 
 Hooks.on("getSceneControlButtons", addSceneControlButtons);
 Hooks.on("renderTokenHUD", addDefeatedHudButton);
 
 function refreshVSOverlay(options = {}) {
-  const combat = game.combat;
+  const combat = getCurrentCombat();
   const force = options?.force === true;
+  const sides = options?.sides ? normalizeSides(options.sides) : getCombatSides(combat);
 
-  if (!isOverlayEnabled() || !combat?.started) {
+  if (!isOverlayEnabled() || !shouldRenderOverlay(combat, sides)) {
     removeVSOverlay();
     previousOverlayUuids = new Set();
     pendingNewUuids = new Set();
+    lastOverlaySignature = "";
     return;
   }
 
@@ -111,12 +120,49 @@ function refreshVSOverlay(options = {}) {
     return;
   }
 
-  renderVSOverlay(combat);
+  const signature = getOverlaySignature(sides);
+  const hasPendingAnimations = pendingNewUuids.size || pendingCompactionSides.size;
+  const existingRoot = document.getElementById(OVERLAY_ID);
+  if (!hasPendingAnimations && existingRoot && signature === lastOverlaySignature) {
+    configApp?.render(false);
+    return;
+  }
+
+  try {
+    renderVSOverlay(combat, sides);
+    lastOverlaySignature = signature;
+  } catch (error) {
+    console.error(`${MODULE_ID} | Failed to render VS overlay`, error);
+    removeVSOverlay();
+  }
   configApp?.render(false);
 }
 
 function isOverlayEnabled() {
   return game.settings.get(MODULE_ID, SETTING_ENABLED);
+}
+
+function shouldRenderOverlay(combat, sides) {
+  if (!hasConfiguredEntries(sides)) return false;
+  if (game.system?.id === "dnd5e") return true;
+  if (isCombatStarted(combat)) return true;
+
+  return false;
+}
+
+function scheduleOverlayRefresh({ force = false, delay = 0, sides } = {}) {
+  scheduledOverlayRefreshOptions = {
+    force: Boolean(scheduledOverlayRefreshOptions.force || force),
+    sides: sides ?? scheduledOverlayRefreshOptions.sides
+  };
+
+  if (scheduledOverlayRefreshId) window.clearTimeout(scheduledOverlayRefreshId);
+  scheduledOverlayRefreshId = window.setTimeout(() => {
+    const options = scheduledOverlayRefreshOptions;
+    scheduledOverlayRefreshId = null;
+    scheduledOverlayRefreshOptions = {};
+    refreshVSOverlay(options);
+  }, delay);
 }
 
 async function toggleOverlayEnabled() {
@@ -215,7 +261,7 @@ async function toggleCombatantDefeated(combatant) {
   persistDefeatedState(combatant.uuid, nextDefeated, combatant);
 }
 
-function renderVSOverlay(combat) {
+function renderVSOverlay(combat, sides = getCombatSides(combat)) {
   const existingRoot = document.getElementById(OVERLAY_ID);
   const shouldAnimate = !existingRoot;
   const previousVisibleState = captureVisibleOverlayState(existingRoot);
@@ -225,7 +271,6 @@ function renderVSOverlay(combat) {
   const generation = overlayGeneration;
   const knownUuids = new Set(previousOverlayUuids);
 
-  const sides = getCombatSides(combat);
   const allies = sides.allies.filter((entry) => !entry.hidden).map(normalizeEntryImage);
   const enemies = sides.enemies.filter((entry) => !entry.hidden).map(normalizeEntryImage);
   const currentVisibleState = createVisibleState({ left: allies, right: enemies });
@@ -417,8 +462,10 @@ async function scheduleOverlayEnter(root, generation, shouldAnimate) {
 
   requestAnimationFrame(() => {
     if (generation !== overlayGeneration || !root.isConnected) return;
-    root.classList.remove("is-enter-prep");
+    root.classList.remove("is-entering");
+    root.getBoundingClientRect();
     root.classList.add("is-entering");
+    root.classList.remove("is-enter-prep");
   });
 }
 
@@ -509,29 +556,94 @@ async function resolveOverlayEntryDocument(uuid) {
   return fromUuid(uuid);
 }
 
-function getCombatSides(combat = game.combat) {
-  const stored = foundry.utils.deepClone(combat?.getFlag(MODULE_ID, FLAG_SIDES) ?? {});
+function getCurrentCombat() {
+  const combat = game.combats?.active ?? game.combat ?? getCurrentScene()?.combat ?? null;
+  const scene = getCurrentScene();
+  if (!combat || !scene) return combat ?? null;
 
+  const combatSceneId = combat.scene?.id ?? combat.sceneId;
+  if (combatSceneId && combatSceneId !== scene.id) return null;
+
+  return combat;
+}
+
+function isCombatStarted(combat) {
+  if (!combat) return false;
+  if (combat.started === true) return true;
+  if (Number(combat.round) > 0) return true;
+
+  const turn = Number(combat.turn);
+  const hasTurn = Number.isInteger(turn) && turn >= 0;
+  const hasCombatants = (combat.combatants?.size ?? combat.turns?.length ?? 0) > 0;
+  return hasTurn && hasCombatants;
+}
+
+function getCurrentScene() {
+  return canvas?.scene ?? game.scenes?.current ?? game.scene ?? null;
+}
+
+function getSideStorageDocument() {
+  return getCurrentCombat() ?? getCurrentScene();
+}
+
+function normalizeSides(stored = {}) {
   return {
     allies: Array.isArray(stored.allies) ? stored.allies : [],
     enemies: Array.isArray(stored.enemies) ? stored.enemies : []
   };
 }
 
+function getCombatSides(combat = getCurrentCombat()) {
+  const combatSides = normalizeSides(foundry.utils.deepClone(combat?.getFlag(MODULE_ID, FLAG_SIDES) ?? {}));
+  if (hasConfiguredEntries(combatSides)) return combatSides;
+
+  const sceneSides = foundry.utils.deepClone(getCurrentScene()?.getFlag(MODULE_ID, FLAG_SIDES) ?? {});
+  return normalizeSides(sceneSides);
+}
+
 async function setCombatSides(sides) {
-  if (!game.combat) return;
-  await game.combat.setFlag(MODULE_ID, FLAG_SIDES, sides);
-  broadcastOverlayRefresh();
+  const storageDocument = getSideStorageDocument();
+  if (!storageDocument) return;
+
+  const normalized = normalizeSides(sides);
+  await storageDocument.setFlag(MODULE_ID, FLAG_SIDES, normalized);
+
+  const scene = getCurrentScene();
+  if (scene && storageDocument !== scene) await scene.setFlag(MODULE_ID, FLAG_SIDES, normalized);
+
+  broadcastOverlayRefresh(normalized);
   window.setTimeout(() => {
     if (pendingNewUuids.size) refreshVSOverlay();
   }, 80);
 }
 
-function broadcastOverlayRefresh() {
+function hasConfiguredEntries(sides) {
+  return Boolean(sides.allies.length || sides.enemies.length);
+}
+
+function getOverlaySignature(sides) {
+  return JSON.stringify({
+    allies: sides.allies.map(getEntrySignature),
+    enemies: sides.enemies.map(getEntrySignature)
+  });
+}
+
+function getEntrySignature(entry) {
+  return {
+    uuid: entry.uuid,
+    img: entry.img,
+    name: entry.name,
+    hidden: Boolean(entry.hidden),
+    defeated: Boolean(entry.defeated)
+  };
+}
+
+function broadcastOverlayRefresh(sides = getCombatSides()) {
   if (!game.user.isGM) return;
 
   game.socket?.emit(`module.${MODULE_ID}`, {
     type: "refresh",
+    sides: normalizeSides(sides),
     newUuids: [...pendingNewUuids],
     compactionSides: [...pendingCompactionSides]
   });
@@ -542,7 +654,7 @@ function handleSocketMessage(message) {
 
   (message.newUuids ?? []).forEach((uuid) => pendingNewUuids.add(uuid));
   (message.compactionSides ?? []).forEach((side) => pendingCompactionSides.add(side));
-  refreshVSOverlay({ force: true });
+  scheduleOverlayRefresh({ force: true, sides: message.sides, delay: 50 });
 }
 
 async function addEntryToSide(side, entry) {
@@ -694,10 +806,23 @@ async function createEntryFromDropData(data) {
 
 async function resolveDroppedDocument(data) {
   const uuid = data.uuid ?? data.documentUuid;
-  if (uuid) return fromUuid(uuid);
+  if (uuid) {
+    try {
+      const document = await fromUuid(uuid);
+      if (document) return document;
+    } catch (error) {
+      console.warn(`${MODULE_ID} | Could not resolve dropped UUID`, uuid, error);
+    }
+  }
+
+  if (data.pack && data.id) {
+    const pack = game.packs?.get(data.pack);
+    const document = await pack?.getDocument?.(data.id);
+    if (document) return document;
+  }
 
   if (data.type === "Actor" && data.id) return game.actors.get(data.id);
-  if (data.type === "Combatant" && data.id) return game.combat?.combatants.get(data.id);
+  if (data.type === "Combatant" && data.id) return getCurrentCombat()?.combatants.get(data.id);
   if (data.type === "Token" && data.id) return canvas?.scene?.tokens?.get(data.id);
 
   return null;
@@ -708,10 +833,11 @@ function getCombatantFromDocument(document) {
   if (document.combatant) return document.combatant;
 
   const tokenId = document.documentName === "Token" ? document.id : null;
-  if (tokenId) return game.combat?.combatants.find((combatant) => combatant.tokenId === tokenId || combatant.token?.id === tokenId);
+  const combat = getCurrentCombat();
+  if (tokenId) return combat?.combatants.find((combatant) => combatant.tokenId === tokenId || combatant.token?.id === tokenId);
 
   if (document.documentName === "Actor") {
-    return game.combat?.combatants.find((combatant) => combatant.actor?.uuid === document.uuid);
+    return combat?.combatants.find((combatant) => combatant.actor?.uuid === document.uuid);
   }
 
   return null;
@@ -746,16 +872,17 @@ function getTokenImage({ combatant, token, actor, document }) {
 
 function findCombatantForToken(token) {
   const documentId = token?.document?.id ?? token?.id;
-  if (!documentId || !game.combat) return null;
+  const combat = getCurrentCombat();
+  if (!documentId || !combat) return null;
 
-  return game.combat.combatants.find((combatant) => {
+  return combat.combatants.find((combatant) => {
     const combatantTokenId = combatant.token?.id ?? combatant.token?.document?.id ?? combatant.tokenId;
     return combatantTokenId === documentId;
   });
 }
 
 function findCombatantByUuid(uuid) {
-  return game.combat?.combatants.find((combatant) => {
+  return getCurrentCombat()?.combatants.find((combatant) => {
     const tokenUuid = combatant.token?.uuid ?? combatant.token?.document?.uuid;
     const actorUuid = combatant.actor?.uuid;
 
@@ -776,6 +903,7 @@ function getOverlayHost() {
 
 function removeVSOverlay() {
   overlayGeneration += 1;
+  lastOverlaySignature = "";
   const root = document.getElementById(OVERLAY_ID);
   if (!root) return;
 
@@ -1105,15 +1233,23 @@ function getFoundryLanguage() {
 
 function parseDropData(event) {
   const transfer = event.originalEvent?.dataTransfer ?? event.dataTransfer;
-  const raw = transfer?.getData("text/plain") || transfer?.getData("application/json");
-  if (!raw) return null;
+  const rawValues = [
+    transfer?.getData("application/json"),
+    transfer?.getData("text/plain"),
+    transfer?.getData("text/uri-list")
+  ].filter(Boolean);
 
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    console.warn(`${MODULE_ID} | Invalid drop data`, error);
-    return null;
+  for (const rawValue of rawValues) {
+    const raw = rawValue.trim();
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      if (/^(Actor|Scene|Compendium)\./.test(raw)) return { uuid: raw };
+    }
   }
+
+  if (rawValues.length) console.warn(`${MODULE_ID} | Invalid drop data`, rawValues);
+  return null;
 }
 
 class VSOverlayConfigApp extends Application {

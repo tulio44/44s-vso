@@ -1,7 +1,7 @@
 #vs-combat-overlay-root {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 8;
   pointer-events: none;
   overflow: hidden;
   color: #f5f7fb;
@@ -10,6 +10,7 @@
 
 #vs-combat-overlay-root.vs-overlay-root--body {
   position: fixed;
+  z-index: 8;
 }
 
 #vs-combat-overlay-root.is-enter-prep {
