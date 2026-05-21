@@ -12,6 +12,10 @@
   position: fixed;
 }
 
+#vs-combat-overlay-root.is-enter-prep {
+  visibility: hidden;
+}
+
 .vs-overlay-vignette {
   position: absolute;
   inset: 0;
@@ -37,6 +41,7 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 0 90px rgba(0, 0, 0, 0.7);
   overflow: hidden;
+  will-change: opacity, transform, filter;
 }
 
 .vs-overlay-frame::before,
@@ -86,17 +91,38 @@
 }
 
 .vs-fighter-wall {
-  --fighter-count: 1;
+  --fighter-count: 0;
+  --fighter-grid-count: 1;
   --tp-slant: clamp(30px, 4vw, 76px);
   z-index: 2;
   display: grid;
-  grid-template-columns: repeat(var(--fighter-count), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--fighter-grid-count), minmax(0, 1fr));
   align-items: stretch;
   justify-self: stretch;
   height: 100%;
   width: 100%;
   min-width: 0;
   min-height: 0;
+}
+
+.vs-fighter-wall.is-empty {
+  opacity: 0.42;
+}
+
+.vs-fighter-wall.is-empty::before {
+  content: "";
+  align-self: stretch;
+  justify-self: stretch;
+  margin: 0 calc(var(--tp-slant) * -0.22);
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.24), transparent 42%, rgba(0, 0, 0, 0.28)),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 0 6px, transparent 6px 18px);
+  border-inline: 1px solid rgba(255, 255, 255, 0.08);
+  clip-path: polygon(0 0, calc(100% - var(--tp-slant)) 0, 100% 100%, var(--tp-slant) 100%);
+}
+
+.vs-fighter-wall-right.is-empty::before {
+  clip-path: polygon(var(--tp-slant) 0, 100% 0, calc(100% - var(--tp-slant)) 100%, 0 100%);
 }
 
 .vs-fighter-wall-left {
@@ -116,6 +142,9 @@
 }
 
 .vs-fighter-slot {
+  --panel-flash-from: -120%;
+  --panel-flash-mid: -20%;
+  --panel-flash-to: 120%;
   position: relative;
   min-width: 0;
   min-height: 100%;
@@ -123,46 +152,57 @@
   filter:
     drop-shadow(1px 0 0 rgba(255, 255, 255, 0.24))
     drop-shadow(-1px 0 0 rgba(0, 0, 0, 0.82));
+  will-change: opacity, transform, filter;
+}
+
+.vs-fighter-slot[data-side="right"] {
+  --panel-flash-from: 120%;
+  --panel-flash-mid: 20%;
+  --panel-flash-to: -120%;
 }
 
 #vs-combat-overlay-root.is-entering .vs-overlay-vignette {
-  animation: vs-vignette-snap 520ms ease-out both;
+  animation: vs-vignette-snap 240ms ease-out both;
+}
+
+#vs-combat-overlay-root.is-entering .vs-overlay-frame {
+  animation: vs-frame-impact 320ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
 #vs-combat-overlay-root.is-entering .vs-fighter-wall-left .vs-fighter-slot {
-  animation: vs-enter-left 820ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: vs-enter-left 340ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
 #vs-combat-overlay-root.is-entering .vs-fighter-wall-right .vs-fighter-slot {
-  animation: vs-enter-right 820ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: vs-enter-right 340ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 
 #vs-combat-overlay-root.is-entering .vs-fighter-slot:nth-child(1) {
-  animation-delay: 40ms;
+  animation-delay: 0ms;
 }
 
 #vs-combat-overlay-root.is-entering .vs-fighter-slot:nth-child(2) {
-  animation-delay: 95ms;
+  animation-delay: 32ms;
 }
 
 #vs-combat-overlay-root.is-entering .vs-fighter-slot:nth-child(3) {
-  animation-delay: 150ms;
+  animation-delay: 64ms;
 }
 
 #vs-combat-overlay-root.is-entering .vs-fighter-slot:nth-child(4) {
-  animation-delay: 205ms;
+  animation-delay: 96ms;
 }
 
 #vs-combat-overlay-root.is-entering .vs-fighter-slot:nth-child(n + 5) {
-  animation-delay: 260ms;
+  animation-delay: 128ms;
 }
 
 #vs-combat-overlay-root.is-entering .vs-text {
-  animation: vs-drop-impact 920ms cubic-bezier(0.16, 1, 0.3, 1) 360ms both;
+  animation: vs-drop-impact 380ms cubic-bezier(0.2, 0, 0, 1) 70ms both;
 }
 
 #vs-combat-overlay-root.is-entering .vs-impact-burst {
-  animation: vs-impact-burst 700ms ease-out 735ms both;
+  animation: vs-impact-burst 300ms ease-out 205ms both;
 }
 
 .vs-fighter-slot.is-pending-new[data-side="left"] {
@@ -176,20 +216,24 @@
 }
 
 #vs-combat-overlay-root.is-exiting .vs-fighter-wall-left .vs-fighter-slot {
-  animation: vs-exit-left 640ms cubic-bezier(0.72, 0, 0.84, 0) both;
+  animation: vs-exit-left 360ms cubic-bezier(0.72, 0, 0.84, 0) both;
 }
 
 #vs-combat-overlay-root.is-exiting .vs-fighter-wall-right .vs-fighter-slot {
-  animation: vs-exit-right 640ms cubic-bezier(0.72, 0, 0.84, 0) both;
+  animation: vs-exit-right 360ms cubic-bezier(0.72, 0, 0.84, 0) both;
 }
 
 #vs-combat-overlay-root.is-exiting .vs-text {
-  animation: vs-exit-mark 600ms cubic-bezier(0.72, 0, 0.84, 0) both;
+  animation: vs-exit-mark 320ms cubic-bezier(0.72, 0, 0.84, 0) both;
 }
 
 #vs-combat-overlay-root.is-exiting .vs-overlay-vignette,
 #vs-combat-overlay-root.is-exiting .vs-overlay-fx {
-  animation: vs-fade-out 620ms ease both;
+  animation: vs-fade-out 340ms ease both;
+}
+
+#vs-combat-overlay-root.is-exiting .vs-overlay-frame {
+  animation: vs-frame-exit 360ms cubic-bezier(0.72, 0, 0.84, 0) both;
 }
 
 .vs-fighter-slot.is-new .vs-fighter-panel::after {
@@ -207,11 +251,14 @@
   background: rgba(3, 4, 6, 0.84);
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.78);
+  cursor: pointer;
   overflow: hidden;
+  pointer-events: auto;
   clip-path: polygon(0 0, calc(100% - var(--tp-slant)) 0, 100% 100%, var(--tp-slant) 100%);
 }
 
 .vs-fighter-panel::before {
+  --fighter-image-flip: 1;
   content: "";
   position: absolute;
   inset: 0;
@@ -219,10 +266,25 @@
   background-position: center center;
   background-repeat: no-repeat;
   background-size: cover;
+  transform: scaleX(var(--fighter-image-flip));
+  transform-origin: 50% 72%;
+  will-change: transform, filter;
 }
 
 .vs-fighter-wall-right .vs-fighter-panel::before {
-  transform: scaleX(-1);
+  --fighter-image-flip: -1;
+}
+
+.vs-fighter-slot:not(.is-defeated) .vs-fighter-panel:not(.vs-fighter-panel-empty)::before {
+  animation: vs-fighter-breath 4.2s ease-in-out infinite;
+}
+
+.vs-fighter-slot:nth-child(2n) .vs-fighter-panel:not(.vs-fighter-panel-empty)::before {
+  animation-delay: -1.4s;
+}
+
+.vs-fighter-slot:nth-child(3n) .vs-fighter-panel:not(.vs-fighter-panel-empty)::before {
+  animation-duration: 4.7s;
 }
 
 .vs-fighter-wall-right .vs-fighter-panel {
@@ -239,13 +301,6 @@
   background:
     linear-gradient(180deg, transparent 48%, rgba(0, 0, 0, 0.72)),
     linear-gradient(90deg, rgba(0, 0, 0, 0.32), transparent 36%, rgba(0, 0, 0, 0.32));
-}
-
-.vs-fighter-panel-empty {
-  opacity: 0.28;
-  background:
-    linear-gradient(135deg, transparent 48%, rgba(255, 255, 255, 0.18) 49% 51%, transparent 52%),
-    rgba(0, 0, 0, 0.68);
 }
 
 .vs-center-mark {
@@ -270,6 +325,7 @@
     3px 3px 0 rgba(255, 87, 82, 0.52),
     0 0 32px rgba(255, 255, 255, 0.32);
   transform: rotate(-4deg) scaleX(0.86);
+  will-change: opacity, transform, filter;
 }
 
 .vs-fighter-name {
@@ -363,22 +419,55 @@
     opacity: 0;
   }
 
+  45% {
+    opacity: 0.9;
+  }
+
   100% {
     opacity: 0.78;
+  }
+}
+
+@keyframes vs-frame-impact {
+  0% {
+    opacity: 0;
+    transform: scale(1.012) skewX(-0.8deg);
+    filter: brightness(1.5) contrast(1.18);
+  }
+
+  44% {
+    opacity: 1;
+    transform: scale(1) skewX(0.35deg);
+    filter: brightness(1.28) contrast(1.12);
+  }
+
+  58% {
+    transform: scale(1) skewX(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1) contrast(1);
   }
 }
 
 @keyframes vs-enter-left {
   0% {
     opacity: 0;
-    transform: translateX(-118%) scaleX(0.78);
-    filter: brightness(1.65) blur(2px);
+    transform: translateX(-150%) scaleX(0.5);
+    filter: brightness(1.8) contrast(1.2) blur(4px);
   }
 
-  58% {
+  52% {
     opacity: 1;
-    transform: translateX(1.6%) scaleX(1.026);
-    filter: brightness(1.18) blur(0);
+    transform: translateX(0) scaleX(1.04);
+    filter: brightness(1.28) contrast(1.08) blur(0);
+  }
+
+  64% {
+    transform: translateX(-1.6%) scaleX(0.99);
+    filter: brightness(1.04) contrast(1.02) blur(0);
   }
 
   100% {
@@ -391,14 +480,19 @@
 @keyframes vs-enter-right {
   0% {
     opacity: 0;
-    transform: translateX(118%) scaleX(0.78);
-    filter: brightness(1.65) blur(2px);
+    transform: translateX(150%) scaleX(0.5);
+    filter: brightness(1.8) contrast(1.2) blur(4px);
   }
 
-  58% {
+  52% {
     opacity: 1;
-    transform: translateX(-1.6%) scaleX(1.026);
-    filter: brightness(1.18) blur(0);
+    transform: translateX(0) scaleX(1.04);
+    filter: brightness(1.28) contrast(1.08) blur(0);
+  }
+
+  64% {
+    transform: translateX(1.6%) scaleX(0.99);
+    filter: brightness(1.04) contrast(1.02) blur(0);
   }
 
   100% {
@@ -411,23 +505,23 @@
 @keyframes vs-drop-impact {
   0% {
     opacity: 0;
-    transform: translateY(-130vh) rotate(-16deg) scale(1.22);
-    filter: blur(5px) brightness(1.8);
+    transform: translateY(-48vh) rotate(-7deg) scale(1.08);
+    filter: blur(3px) brightness(1.7) contrast(1.16);
   }
 
-  56% {
+  48% {
     opacity: 1;
-    transform: translateY(0) rotate(-4deg) scale(0.86);
-    filter: blur(0) brightness(1.35);
+    transform: translateY(0) rotate(-4deg) scaleX(0.86);
+    filter: blur(0) brightness(1.35) contrast(1.1);
   }
 
-  70% {
-    transform: translateY(10px) rotate(-4deg) scale(1.08, 0.78);
-    filter: blur(0) brightness(1.1);
+  60% {
+    transform: translateY(0) rotate(-4deg) scaleX(0.9);
+    filter: blur(0) brightness(1.06) contrast(1.04);
   }
 
-  82% {
-    transform: translateY(-5px) rotate(-4deg) scale(0.92, 1.05);
+  72% {
+    transform: translateY(0) rotate(-4deg) scaleX(0.84);
   }
 
   100% {
@@ -440,16 +534,16 @@
 @keyframes vs-impact-burst {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.12);
+    transform: translate(-50%, -50%) scale(0.08);
   }
 
-  24% {
-    opacity: 0.8;
+  18% {
+    opacity: 0.95;
   }
 
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1.38);
+    transform: translate(-50%, -50%) scale(1.18);
   }
 }
 
@@ -490,16 +584,35 @@
 @keyframes vs-panel-flash {
   0% {
     opacity: 0;
-    transform: translateX(-120%);
+    transform: translateX(var(--panel-flash-from));
   }
 
   35% {
     opacity: 0.85;
+    transform: translateX(var(--panel-flash-mid));
   }
 
   100% {
     opacity: 0;
-    transform: translateX(120%);
+    transform: translateX(var(--panel-flash-to));
+  }
+}
+
+@keyframes vs-fighter-breath {
+  0%,
+  100% {
+    transform: scaleX(var(--fighter-image-flip)) translateY(0) scale(1, 1);
+    filter: brightness(1);
+  }
+
+  46% {
+    transform: scaleX(var(--fighter-image-flip)) translateY(-0.25%) scale(1.004, 1.007);
+    filter: brightness(1.008);
+  }
+
+  62% {
+    transform: scaleX(var(--fighter-image-flip)) translateY(-0.12%) scale(1.002, 1.004);
+    filter: brightness(1.004);
   }
 }
 
@@ -510,16 +623,22 @@
     filter: brightness(1);
   }
 
-  22% {
+  18% {
     opacity: 1;
-    transform: translateX(1.4%) scaleX(1.035);
-    filter: brightness(1.35);
+    transform: translateX(0.8%) scaleX(1.018);
+    filter: brightness(1.42) contrast(1.12);
+  }
+
+  36% {
+    opacity: 1;
+    transform: translateX(-6%) scaleX(0.96);
+    filter: brightness(1.12) contrast(1.08);
   }
 
   100% {
     opacity: 0;
-    transform: translateX(-118%) scaleX(0.72);
-    filter: brightness(1.8) blur(2px);
+    transform: translateX(-142%) scaleX(0.52);
+    filter: brightness(1.65) contrast(1.18) blur(3px);
   }
 }
 
@@ -530,16 +649,22 @@
     filter: brightness(1);
   }
 
-  22% {
+  18% {
     opacity: 1;
-    transform: translateX(-1.4%) scaleX(1.035);
-    filter: brightness(1.35);
+    transform: translateX(-0.8%) scaleX(1.018);
+    filter: brightness(1.42) contrast(1.12);
+  }
+
+  36% {
+    opacity: 1;
+    transform: translateX(6%) scaleX(0.96);
+    filter: brightness(1.12) contrast(1.08);
   }
 
   100% {
     opacity: 0;
-    transform: translateX(118%) scaleX(0.72);
-    filter: brightness(1.8) blur(2px);
+    transform: translateX(142%) scaleX(0.52);
+    filter: brightness(1.65) contrast(1.18) blur(3px);
   }
 }
 
@@ -550,16 +675,36 @@
     filter: brightness(1);
   }
 
-  28% {
+  20% {
     opacity: 1;
-    transform: translateY(8px) rotate(-7deg) scale(1.04, 0.82);
-    filter: brightness(1.45);
+    transform: translateY(0) rotate(-4deg) scaleX(0.9);
+    filter: brightness(1.55) contrast(1.14);
   }
 
   100% {
     opacity: 0;
-    transform: translateY(-58vh) rotate(12deg) scale(0.52);
-    filter: brightness(1.8) blur(3px);
+    transform: translateY(0) rotate(-4deg) scaleX(0.28);
+    filter: brightness(1.8) contrast(1.2) blur(2px);
+  }
+}
+
+@keyframes vs-frame-exit {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1) contrast(1);
+  }
+
+  28% {
+    opacity: 1;
+    transform: scale(0.998) skewX(-0.35deg);
+    filter: brightness(1.28) contrast(1.14);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.012) skewX(0.8deg);
+    filter: brightness(1.65) contrast(1.2);
   }
 }
 
@@ -575,14 +720,17 @@
 
 @media (prefers-reduced-motion: reduce) {
   #vs-combat-overlay-root.is-entering .vs-overlay-vignette,
+  #vs-combat-overlay-root.is-entering .vs-overlay-frame,
   #vs-combat-overlay-root.is-entering .vs-fighter-slot,
   #vs-combat-overlay-root.is-entering .vs-text,
   #vs-combat-overlay-root.is-entering .vs-impact-burst,
   .vs-fighter-slot.is-new,
   .vs-fighter-slot.is-pending-new,
   .vs-fighter-slot.is-new .vs-fighter-panel::after,
+  .vs-fighter-panel::before,
   #vs-combat-overlay-root.is-exiting .vs-fighter-slot,
   #vs-combat-overlay-root.is-exiting .vs-text,
+  #vs-combat-overlay-root.is-exiting .vs-overlay-frame,
   #vs-combat-overlay-root.is-exiting .vs-overlay-vignette,
   #vs-combat-overlay-root.is-exiting .vs-overlay-fx {
     animation: none;
@@ -657,6 +805,16 @@
   padding: 5px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.vs-config-entry.is-dragging {
+  opacity: 0.42;
+}
+
+.vs-config-entry.is-drop-target {
+  outline: 2px solid rgba(103, 232, 249, 0.86);
+  outline-offset: -2px;
 }
 
 .vs-config-entry.is-defeated {
@@ -668,7 +826,7 @@
 }
 
 .vs-config-entry.is-hidden span::after {
-  content: " (oculto)";
+  content: attr(data-hidden-label);
   opacity: 0.72;
 }
 
@@ -686,6 +844,7 @@
 
 .vs-config-entry button {
   width: 28px;
+  cursor: pointer;
   height: 28px;
   padding: 0;
 }

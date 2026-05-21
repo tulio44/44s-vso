@@ -4,34 +4,87 @@ const FALLBACK_IMG = "icons/svg/mystery-man.svg";
 const SETTING_ENABLED = "enabled";
 const FLAG_DEFEATED = "defeated";
 const FLAG_SIDES = "sides";
+const LOCALIZATION_FALLBACKS = {
+  "pt-BR": {
+    "settings.enabled.name": "VS Overlay ativo",
+    "settings.enabled.hint": "Mostra o overlay VS durante combates.",
+    "controls.enable": "Ativar VS Overlay",
+    "controls.disable": "Desativar VS Overlay",
+    "controls.config": "Configurar lados do VS Overlay",
+    "hud.markActive": "Marcar como ativo no VS Overlay",
+    "hud.markDefeated": "Marcar como derrotado no VS Overlay",
+    "common.unknown": "Desconhecido",
+    "config.title": "VS Overlay",
+    "config.allies": "Aliados",
+    "config.enemies": "Inimigos",
+    "config.openSheet": "Abrir ficha",
+    "config.toggleDefeated": "Alternar derrotado",
+    "config.reveal": "Revelar no overlay",
+    "config.hide": "Esconder do overlay",
+    "config.remove": "Remover",
+    "config.dropHint": "Arraste fichas, tokens ou combatentes aqui",
+    "config.hiddenSuffix": " (oculto)",
+    "notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o VS Overlay."
+  },
+  en: {
+    "settings.enabled.name": "VS Overlay enabled",
+    "settings.enabled.hint": "Shows the VS overlay during combat.",
+    "controls.enable": "Enable VS Overlay",
+    "controls.disable": "Disable VS Overlay",
+    "controls.config": "Configure VS Overlay sides",
+    "hud.markActive": "Mark as active in VS Overlay",
+    "hud.markDefeated": "Mark as defeated in VS Overlay",
+    "common.unknown": "Unknown",
+    "config.title": "VS Overlay",
+    "config.allies": "Allies",
+    "config.enemies": "Enemies",
+    "config.openSheet": "Open sheet",
+    "config.toggleDefeated": "Toggle defeated",
+    "config.reveal": "Show in overlay",
+    "config.hide": "Hide from overlay",
+    "config.remove": "Remove",
+    "config.dropHint": "Drag actors, tokens, or combatants here",
+    "config.hiddenSuffix": " (hidden)",
+    "notifications.dropReadFailed": "I could not read that dropped item for the VS Overlay."
+  }
+};
 
 let configApp;
 let previousOverlayUuids = new Set();
 let pendingNewUuids = new Set();
+let pendingCompactionSides = new Set();
 let suppressOverlayRefreshUntil = 0;
 let overlayGeneration = 0;
+const preloadedImages = new Map();
 
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
 
   game.settings.register(MODULE_ID, SETTING_ENABLED, {
-    name: "VS Overlay ativo",
-    hint: "Mostra o overlay VS durante combates.",
-    scope: "client",
+    name: localize("settings.enabled.name"),
+    hint: localize("settings.enabled.hint"),
+    scope: "world",
     config: false,
     type: Boolean,
     default: true,
-    onChange: refreshVSOverlay
+    onChange: () => {
+      refreshVSOverlay();
+      ui.controls?.render?.();
+    }
   });
 });
 
-Hooks.once("ready", refreshVSOverlay);
+Hooks.once("ready", () => {
+  game.socket?.on(`module.${MODULE_ID}`, handleSocketMessage);
+  refreshVSOverlay();
+});
 
 Hooks.on("combatStart", refreshVSOverlay);
 Hooks.on("deleteCombat", () => {
   removeVSOverlay();
   previousOverlayUuids = new Set();
   pendingNewUuids = new Set();
+  pendingCompactionSides = new Set();
 });
 Hooks.on("updateCombat", refreshVSOverlay);
 Hooks.on("createCombatant", refreshVSOverlay);
@@ -67,6 +120,8 @@ function isOverlayEnabled() {
 }
 
 async function toggleOverlayEnabled() {
+  if (!game.user.isGM) return;
+
   const enabled = isOverlayEnabled();
 
   if (enabled) await playOverlayExitAnimation();
@@ -80,18 +135,18 @@ function addSceneControlButtons(controls) {
 
   addTool(tokenControls, {
     name: "vs-combat-overlay-toggle",
-    title: isOverlayEnabled() ? "Desativar VS Overlay" : "Ativar VS Overlay",
+    title: isOverlayEnabled() ? localize("controls.disable") : localize("controls.enable"),
     icon: "fas fa-bolt",
     toggle: true,
     active: isOverlayEnabled(),
     button: true,
-    visible: true,
+    visible: game.user.isGM,
     onClick: toggleOverlayEnabled
   });
 
   addTool(tokenControls, {
     name: "vs-combat-overlay-config",
-    title: "Configurar lados do VS Overlay",
+    title: localize("controls.config"),
     icon: "fas fa-people-arrows",
     button: true,
     visible: game.user.isGM,
@@ -101,7 +156,9 @@ function addSceneControlButtons(controls) {
 
 function addTool(control, tool) {
   if (Array.isArray(control.tools)) {
-    if (!control.tools.some((existing) => existing.name === tool.name)) control.tools.push(tool);
+    const existing = control.tools.find((candidate) => candidate.name === tool.name);
+    if (existing) Object.assign(existing, tool);
+    else control.tools.push(tool);
     return;
   }
 
@@ -133,7 +190,7 @@ function addDefeatedHudButton(app, html) {
   const defeated = isEntryDefeated(combatant);
   const button = document.createElement("div");
   button.className = `control-icon vs-combat-defeated-toggle ${defeated ? "active" : ""}`;
-  button.title = defeated ? "Marcar como ativo no VS Overlay" : "Marcar como derrotado no VS Overlay";
+  button.title = defeated ? localize("hud.markActive") : localize("hud.markDefeated");
   button.innerHTML = `<i class="fas fa-skull"></i>`;
   button.addEventListener("click", async (event) => {
     event.preventDefault();
@@ -159,20 +216,26 @@ async function toggleCombatantDefeated(combatant) {
 }
 
 function renderVSOverlay(combat) {
-  const shouldAnimate = !document.getElementById(OVERLAY_ID);
+  const existingRoot = document.getElementById(OVERLAY_ID);
+  const shouldAnimate = !existingRoot;
+  const previousVisibleState = captureVisibleOverlayState(existingRoot);
+  const previousDefeatedState = captureDefeatedOverlayState(existingRoot);
   removeVSOverlay();
   overlayGeneration += 1;
   const generation = overlayGeneration;
   const knownUuids = new Set(previousOverlayUuids);
-  const newUuids = new Set(pendingNewUuids);
 
   const sides = getCombatSides(combat);
   const allies = sides.allies.filter((entry) => !entry.hidden).map(normalizeEntryImage);
   const enemies = sides.enemies.filter((entry) => !entry.hidden).map(normalizeEntryImage);
+  const currentVisibleState = createVisibleState({ left: allies, right: enemies });
+  const currentDefeatedState = createDefeatedState([...allies, ...enemies]);
+  const newUuids = getNewVisibleUuids(currentVisibleState, previousVisibleState, pendingNewUuids, shouldAnimate);
+  const compactionSides = getCompactionSides(currentVisibleState, previousVisibleState, pendingCompactionSides, shouldAnimate);
 
   const root = document.createElement("section");
   root.id = OVERLAY_ID;
-  root.classList.toggle("is-entering", shouldAnimate);
+  root.classList.toggle("is-enter-prep", shouldAnimate);
 
   root.innerHTML = `
     <div class="vs-overlay-vignette"></div>
@@ -180,11 +243,11 @@ function renderVSOverlay(combat) {
       <div class="vs-impact-burst"></div>
     </div>
     <div class="vs-overlay-frame" aria-hidden="true">
-      <div class="vs-fighter-wall vs-fighter-wall-left" style="--fighter-count: ${getDisplayCount(allies)};">
+      <div class="vs-fighter-wall vs-fighter-wall-left ${!allies.length ? "is-empty" : ""}" style="${getFighterCountStyle(allies)}">
         ${createFighterColumns(allies, "left", { shouldAnimate, knownUuids, newUuids })}
       </div>
 
-      <div class="vs-fighter-wall vs-fighter-wall-right" style="--fighter-count: ${getDisplayCount(enemies)};">
+      <div class="vs-fighter-wall vs-fighter-wall-right ${!enemies.length ? "is-empty" : ""}" style="${getFighterCountStyle(enemies)}">
         ${createFighterColumns(enemies, "right", { shouldAnimate, knownUuids, newUuids })}
       </div>
 
@@ -196,26 +259,207 @@ function renderVSOverlay(combat) {
 
   const host = getOverlayHost();
   root.classList.toggle("vs-overlay-root--body", host === document.body);
-  host.insertBefore(root, host.firstElementChild);
   applyPanelImages(root);
+  host.insertBefore(root, host.firstElementChild);
+  bindOverlayPanelClicks(root);
+  scheduleOverlayEnter(root, generation, shouldAnimate);
+  triggerSideCompactionAnimations(root, compactionSides, newUuids, generation, shouldAnimate);
   triggerNewEntryAnimations(root, newUuids, generation);
+  triggerDefeatedChangeAnimations(root, previousDefeatedState, currentDefeatedState, newUuids, generation, shouldAnimate);
   previousOverlayUuids = getEntryUuidSet([...allies, ...enemies]);
   pendingNewUuids = new Set();
+  pendingCompactionSides = new Set();
+}
+
+function captureVisibleOverlayState(root) {
+  const state = createEmptyVisibleState();
+  if (!root) return state;
+
+  root.querySelectorAll(".vs-fighter-slot[data-side][data-uuid]").forEach((slot) => {
+    const side = slot.dataset.side;
+    const uuid = slot.dataset.uuid;
+    if (!uuid || !state[side]) return;
+    state[side].add(uuid);
+  });
+
+  return state;
+}
+
+function captureDefeatedOverlayState(root) {
+  const state = new Map();
+  if (!root) return state;
+
+  root.querySelectorAll(".vs-fighter-slot[data-uuid]").forEach((slot) => {
+    if (!slot.dataset.uuid) return;
+    state.set(slot.dataset.uuid, slot.classList.contains("is-defeated"));
+  });
+
+  return state;
+}
+
+function createDefeatedState(entries) {
+  const state = new Map();
+
+  entries.forEach((entry) => {
+    if (entry.uuid) state.set(entry.uuid, Boolean(entry.defeated));
+  });
+
+  return state;
+}
+
+function createVisibleState(entriesBySide) {
+  const state = createEmptyVisibleState();
+
+  Object.entries(entriesBySide).forEach(([side, entries]) => {
+    entries.forEach((entry) => {
+      if (entry.uuid) state[side].add(entry.uuid);
+    });
+  });
+
+  return state;
+}
+
+function createEmptyVisibleState() {
+  return {
+    left: new Set(),
+    right: new Set()
+  };
+}
+
+function getNewVisibleUuids(currentState, previousState, explicitNewUuids, shouldAnimate) {
+  const newUuids = new Set(explicitNewUuids);
+  if (shouldAnimate) return newUuids;
+
+  for (const side of ["left", "right"]) {
+    currentState[side].forEach((uuid) => {
+      if (!previousState[side].has(uuid)) newUuids.add(uuid);
+    });
+  }
+
+  return newUuids;
+}
+
+function getCompactionSides(currentState, previousState, explicitSides, shouldAnimate) {
+  const sides = new Set([...explicitSides].map(getRenderSide));
+  if (shouldAnimate) return sides;
+
+  for (const side of ["left", "right"]) {
+    const removed = [...previousState[side]].some((uuid) => !currentState[side].has(uuid));
+    if (removed) sides.add(side);
+  }
+
+  return sides;
+}
+
+function triggerDefeatedChangeAnimations(root, previousState, currentState, newUuids, generation, shouldAnimate) {
+  if (shouldAnimate || !previousState.size) return;
+
+  requestAnimationFrame(() => {
+    if (generation !== overlayGeneration || !root.isConnected) return;
+
+    currentState.forEach((defeated, uuid) => {
+      if (newUuids.has(uuid) || !previousState.has(uuid) || previousState.get(uuid) === defeated) return;
+
+      if (defeated) playDefeatedAnimation(uuid);
+      else playRecoveryAnimation(uuid);
+    });
+  });
+}
+
+function triggerSideCompactionAnimations(root, compactionSides, newUuids, generation, shouldAnimate) {
+  if (shouldAnimate || !compactionSides.size) return;
+
+  root.getBoundingClientRect();
+  requestAnimationFrame(() => {
+    if (generation !== overlayGeneration || !root.isConnected) return;
+
+    compactionSides.forEach((side) => {
+      const renderSide = getRenderSide(side);
+      const slots = [...root.querySelectorAll(`.vs-fighter-slot[data-side="${renderSide}"][data-uuid]`)]
+        .filter((slot) => slot.dataset.uuid && !newUuids.has(slot.dataset.uuid));
+
+      slots.forEach((slot, index) => {
+        const fromX = renderSide === "right" ? "5%" : "-5%";
+        const cutX = renderSide === "right" ? "-1.2%" : "1.2%";
+
+        slot.animate(
+          [
+            { opacity: 0.72, transform: `translateX(${fromX})`, filter: "brightness(1.35) contrast(1.08)" },
+            { opacity: 1, transform: `translateX(${cutX})`, filter: "brightness(1.08) contrast(1.03)", offset: 0.42 },
+            { opacity: 1, transform: "translateX(0)", filter: "brightness(1) contrast(1)" }
+          ],
+          {
+            delay: Math.min(index * 14, 42),
+            duration: 170,
+            easing: "cubic-bezier(0.55, 0, 0.28, 1)",
+            fill: "both"
+          }
+        );
+      });
+    });
+  });
+}
+
+function getRenderSide(side) {
+  if (side === "allies") return "left";
+  if (side === "enemies") return "right";
+  return side;
+}
+
+async function scheduleOverlayEnter(root, generation, shouldAnimate) {
+  if (!shouldAnimate) return;
+
+  root.getBoundingClientRect();
+  await Promise.race([
+    preloadPanelImages(root),
+    new Promise((resolve) => window.setTimeout(resolve, 120))
+  ]);
+
+  requestAnimationFrame(() => {
+    if (generation !== overlayGeneration || !root.isConnected) return;
+    root.classList.remove("is-enter-prep");
+    root.classList.add("is-entering");
+  });
+}
+
+function preloadPanelImages(root) {
+  const srcs = [...root.querySelectorAll(".vs-fighter-panel[data-img]")]
+    .map((panel) => panel.dataset.img)
+    .filter(Boolean);
+
+  return Promise.allSettled(srcs.map(preloadImage));
+}
+
+function preloadImage(src) {
+  if (preloadedImages.has(src)) return preloadedImages.get(src);
+
+  const promise = new Promise((resolve) => {
+    const image = new Image();
+    image.onload = resolve;
+    image.onerror = resolve;
+    image.src = src;
+
+    if (image.decode) image.decode().then(resolve).catch(resolve);
+  });
+
+  preloadedImages.set(src, promise);
+  return promise;
 }
 
 function createFighterColumns(entries, side, context = {}) {
   const visibleEntries = entries;
   const slotCount = getDisplayCount(visibleEntries);
+  if (!slotCount) return "";
 
   return Array.from({ length: slotCount }, (_, index) => {
     const entry = visibleEntries[index];
-    return entry ? createFighterPanel(entry, side, context) : createEmptyFighterPanel(side);
+    return entry ? createFighterPanel(entry, side, context) : "";
   }).join("");
 }
 
 function createFighterPanel(entry, side, { shouldAnimate = false, knownUuids = new Set(), newUuids = new Set() } = {}) {
   const img = entry.img || FALLBACK_IMG;
-  const name = entry.name || "Unknown";
+  const name = entry.name || localize("common.unknown");
   const isNew = !shouldAnimate && entry.uuid && (newUuids.has(entry.uuid) || !knownUuids.has(entry.uuid));
 
   return `
@@ -228,16 +472,41 @@ function createFighterPanel(entry, side, { shouldAnimate = false, knownUuids = n
   `;
 }
 
-function createEmptyFighterPanel(side) {
-  return `
-    <article class="vs-fighter-slot">
-      <div class="vs-fighter-panel vs-fighter-panel-empty vs-empty-${side}"></div>
-    </article>
-  `;
+function getDisplayCount(entries) {
+  return entries.length || 0;
 }
 
-function getDisplayCount(entries) {
-  return Math.max(1, entries.length || 0);
+function getFighterCountStyle(entries) {
+  const count = getDisplayCount(entries);
+  return `--fighter-count: ${count}; --fighter-grid-count: ${Math.max(1, count)};`;
+}
+
+function bindOverlayPanelClicks(root) {
+  root.querySelectorAll(".vs-fighter-panel[data-img]").forEach((panel) => {
+    panel.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const slot = event.currentTarget.closest(".vs-fighter-slot[data-uuid]");
+      openOverlayEntrySheet(slot?.dataset.uuid);
+    });
+  });
+}
+
+async function openOverlayEntrySheet(uuid) {
+  const document = await resolveOverlayEntryDocument(uuid);
+  const sheetDocument = document?.actor ?? document;
+
+  sheetDocument?.sheet?.render?.(true);
+}
+
+async function resolveOverlayEntryDocument(uuid) {
+  if (!uuid) return null;
+
+  const combatant = findCombatantByUuid(uuid);
+  if (combatant) return combatant;
+
+  return fromUuid(uuid);
 }
 
 function getCombatSides(combat = game.combat) {
@@ -252,9 +521,28 @@ function getCombatSides(combat = game.combat) {
 async function setCombatSides(sides) {
   if (!game.combat) return;
   await game.combat.setFlag(MODULE_ID, FLAG_SIDES, sides);
+  broadcastOverlayRefresh();
   window.setTimeout(() => {
     if (pendingNewUuids.size) refreshVSOverlay();
   }, 80);
+}
+
+function broadcastOverlayRefresh() {
+  if (!game.user.isGM) return;
+
+  game.socket?.emit(`module.${MODULE_ID}`, {
+    type: "refresh",
+    newUuids: [...pendingNewUuids],
+    compactionSides: [...pendingCompactionSides]
+  });
+}
+
+function handleSocketMessage(message) {
+  if (message?.type !== "refresh") return;
+
+  (message.newUuids ?? []).forEach((uuid) => pendingNewUuids.add(uuid));
+  (message.compactionSides ?? []).forEach((side) => pendingCompactionSides.add(side));
+  refreshVSOverlay({ force: true });
 }
 
 async function addEntryToSide(side, entry) {
@@ -272,8 +560,35 @@ async function addEntryToSide(side, entry) {
 
 async function removeEntryFromSide(side, uuid) {
   await playSlotExitAnimation(uuid, side);
+  pendingCompactionSides.add(side);
   const sides = getCombatSides();
   sides[side] = sides[side].filter((entry) => entry.uuid !== uuid);
+  await setCombatSides(sides);
+}
+
+async function moveAssignedEntry(sourceSide, targetSide, uuid, beforeUuid = null) {
+  const sides = getCombatSides();
+  const sourceEntries = sides[sourceSide];
+  const targetEntries = sides[targetSide];
+  if (!Array.isArray(sourceEntries) || !Array.isArray(targetEntries)) return;
+
+  const entryIndex = sourceEntries.findIndex((entry) => entry.uuid === uuid);
+  if (entryIndex < 0) return;
+
+  const [entry] = sourceEntries.splice(entryIndex, 1);
+  const cleanTargetEntries = sourceSide === targetSide
+    ? sourceEntries
+    : targetEntries.filter((candidate) => candidate.uuid !== uuid);
+
+  const insertIndex = beforeUuid
+    ? cleanTargetEntries.findIndex((candidate) => candidate.uuid === beforeUuid)
+    : -1;
+
+  if (insertIndex >= 0) cleanTargetEntries.splice(insertIndex, 0, entry);
+  else cleanTargetEntries.push(entry);
+
+  sides[sourceSide] = sourceEntries;
+  sides[targetSide] = cleanTargetEntries;
   await setCombatSides(sides);
 }
 
@@ -308,7 +623,8 @@ async function toggleAssignedEntryHidden(side, uuid) {
 function setAssignedEntryHidden(side, uuid, hidden) {
   if (hidden) {
     playSlotExitAnimation(uuid, side).finally(() => {
-      persistAssignedEntryState(side, uuid, { hidden: true }, undefined, { suppressRefresh: false });
+      pendingCompactionSides.add(side);
+      persistAssignedEntryState(side, uuid, { hidden: true }, undefined, { suppressRefresh: false, compactionSide: side });
     });
     return;
   }
@@ -342,8 +658,10 @@ async function persistAssignedEntryState(side, uuid, updates, combatant = findCo
 
   Object.assign(entry, updates);
   if (suppressRefresh) suppressOverlayRefresh();
+  else if (options.compactionSide) suppressOverlayRefresh(350);
   await setCombatSides(sides);
   if (options.newUuid) pendingNewUuids.add(options.newUuid);
+  if (options.compactionSide) pendingCompactionSides.add(options.compactionSide);
   if (!suppressRefresh) refreshVSOverlay({ force: true });
 
   if ("defeated" in updates && combatant) {
@@ -360,7 +678,7 @@ async function createEntryFromDropData(data) {
   const actor = combatant?.actor ?? document.actor ?? (document.documentName === "Actor" ? document : null);
   const token = combatant?.token ?? (document.documentName === "Token" ? document : null);
   const uuid = combatant?.uuid ?? token?.uuid ?? actor?.uuid ?? document.uuid;
-  const name = combatant?.name ?? token?.name ?? actor?.name ?? document.name ?? "Unknown";
+  const name = combatant?.name ?? token?.name ?? actor?.name ?? document.name ?? localize("common.unknown");
   const img = getTokenImage({ combatant, token, actor, document });
 
   if (!uuid) return null;
@@ -484,10 +802,16 @@ function setRenderedDefeatedState(uuid, defeated) {
   if (!root || !uuid) return;
 
   const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
-  slot?.getAnimations({ subtree: true }).forEach((animation) => {
-    if (animation.playState !== "finished") animation.cancel();
-  });
+  cancelSlotAnimations(slot, { keepBreath: !defeated });
   slot?.classList.toggle("is-defeated", defeated);
+}
+
+function cancelSlotAnimations(slot, { keepBreath = false } = {}) {
+  slot?.getAnimations({ subtree: true }).forEach((animation) => {
+    if (animation.playState === "finished") return;
+    if (keepBreath && animation.animationName === "vs-fighter-breath") return;
+    animation.cancel();
+  });
 }
 
 function triggerNewEntryAnimations(root, newUuids, generation = overlayGeneration) {
@@ -501,7 +825,7 @@ function triggerNewEntryAnimations(root, newUuids, generation = overlayGeneratio
 
   const slots = root.querySelectorAll(selectors);
   slots.forEach((slot) => {
-    const isRight = slot.dataset.side === "right";
+    const isRight = getRenderSide(slot.dataset.side) === "right";
     const fromX = isRight ? "108%" : "-108%";
     const overshootX = isRight ? "-1.8%" : "1.8%";
 
@@ -540,12 +864,16 @@ function triggerNewEntryAnimations(root, newUuids, generation = overlayGeneratio
 function triggerPanelFlash(slot) {
   const panel = slot.querySelector(".vs-fighter-panel");
   if (!panel) return;
+  const isRight = getRenderSide(slot.dataset.side) === "right";
+  const fromX = isRight ? "120%" : "-120%";
+  const midX = isRight ? "20%" : "-20%";
+  const toX = isRight ? "-120%" : "120%";
 
   panel.animate(
     [
-      { opacity: 0, transform: "translateX(-120%)" },
-      { opacity: 0.85, transform: "translateX(-20%)", offset: 0.35 },
-      { opacity: 0, transform: "translateX(120%)" }
+      { opacity: 0, transform: `translateX(${fromX})` },
+      { opacity: 0.85, transform: `translateX(${midX})`, offset: 0.35 },
+      { opacity: 0, transform: `translateX(${toX})` }
     ],
     {
       duration: 620,
@@ -588,7 +916,7 @@ async function playDefeatedAnimation(uuid) {
   const panel = slot.querySelector(".vs-fighter-panel");
   if (!panel) return;
 
-  slot.getAnimations({ subtree: true }).forEach((animation) => animation.cancel());
+  cancelSlotAnimations(slot);
   slot.classList.add("is-being-defeated");
 
   await Promise.allSettled([
@@ -632,7 +960,7 @@ async function playRecoveryAnimation(uuid) {
   const panel = slot.querySelector(".vs-fighter-panel");
   if (!panel) return;
 
-  slot.getAnimations({ subtree: true }).forEach((animation) => animation.cancel());
+  cancelSlotAnimations(slot, { keepBreath: true });
   slot.classList.add("is-recovering");
 
   await Promise.allSettled([
@@ -709,7 +1037,7 @@ async function playOverlayExitAnimation() {
   root.getAnimations({ subtree: true }).forEach((animation) => animation.cancel());
   root.classList.add("is-exiting");
 
-  await waitForAnimation(root, 720);
+  await waitForAnimation(root, 420);
 }
 
 function waitForAnimation(element, fallbackMs) {
@@ -748,11 +1076,51 @@ function escapeSelector(value) {
   return String(value).replace(/["\\]/g, "\\$&");
 }
 
+function localize(key) {
+  const fullKey = `${MODULE_ID}.${key}`;
+  const language = getFoundryLanguage();
+  const fallback = LOCALIZATION_FALLBACKS[language]?.[key] ?? LOCALIZATION_FALLBACKS.en[key];
+  if (fallback) return fallback;
+
+  return game.i18n.localize(fullKey);
+}
+
+function getFoundryLanguage() {
+  const languages = [];
+
+  try {
+    languages.push(game.i18n?.lang);
+    languages.push(game.settings?.get?.("core", "language"));
+    languages.push(document.documentElement?.lang);
+  } catch (error) {
+    // English remains the default if Foundry is not ready to expose language settings.
+  }
+
+  const normalized = languages.filter(Boolean).map((language) => String(language).toLowerCase());
+  if (normalized.some((language) => language.startsWith("en"))) return "en";
+  if (normalized.some((language) => language.startsWith("pt"))) return "pt-BR";
+
+  return "en";
+}
+
+function parseDropData(event) {
+  const transfer = event.originalEvent?.dataTransfer ?? event.dataTransfer;
+  const raw = transfer?.getData("text/plain") || transfer?.getData("application/json");
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Invalid drop data`, error);
+    return null;
+  }
+}
+
 class VSOverlayConfigApp extends Application {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: "vs-combat-overlay-config",
-      title: "VS Overlay",
+      title: localize("config.title"),
       classes: ["vs-combat-config"],
       width: 560,
       height: "auto",
@@ -766,8 +1134,8 @@ class VSOverlayConfigApp extends Application {
     return $($.parseHTML(`
       <form class="vs-config-form">
         <div class="vs-config-sides">
-          ${this.createSideMarkup("allies", "Aliados", sides.allies)}
-          ${this.createSideMarkup("enemies", "Inimigos", sides.enemies)}
+          ${this.createSideMarkup("allies", localize("config.allies"), sides.allies)}
+          ${this.createSideMarkup("enemies", localize("config.enemies"), sides.enemies)}
         </div>
       </form>
     `));
@@ -775,19 +1143,19 @@ class VSOverlayConfigApp extends Application {
 
   createSideMarkup(side, label, entries) {
     const rows = entries.map((entry) => `
-      <li class="vs-config-entry ${entry.defeated ? "is-defeated" : ""} ${entry.hidden ? "is-hidden" : ""}" data-side="${side}" data-uuid="${escapeAttr(entry.uuid)}">
+      <li class="vs-config-entry ${entry.defeated ? "is-defeated" : ""} ${entry.hidden ? "is-hidden" : ""}" data-side="${side}" data-uuid="${escapeAttr(entry.uuid)}" draggable="true" title="${localize("config.openSheet")}">
         <img src="${escapeAttr(entry.img || FALLBACK_IMG)}" alt="" />
-        <span>${escapeHtml(entry.name || "Unknown")}</span>
-        <button type="button" data-action="defeated" title="Alternar derrotado"><i class="fas fa-skull"></i></button>
-        <button type="button" data-action="hidden" title="${entry.hidden ? "Revelar no overlay" : "Esconder do overlay"}"><i class="fas ${entry.hidden ? "fa-eye" : "fa-eye-slash"}"></i></button>
-        <button type="button" data-action="remove" title="Remover"><i class="fas fa-trash"></i></button>
+        <span data-hidden-label="${escapeAttr(localize("config.hiddenSuffix"))}">${escapeHtml(entry.name || localize("common.unknown"))}</span>
+        <button type="button" data-action="defeated" title="${localize("config.toggleDefeated")}"><i class="fas fa-skull"></i></button>
+        <button type="button" data-action="hidden" title="${entry.hidden ? localize("config.reveal") : localize("config.hide")}"><i class="fas ${entry.hidden ? "fa-eye" : "fa-eye-slash"}"></i></button>
+        <button type="button" data-action="remove" title="${localize("config.remove")}"><i class="fas fa-trash"></i></button>
       </li>
     `).join("");
 
     return `
       <section class="vs-config-side" data-side="${side}">
         <h3>${label}</h3>
-        <div class="vs-config-drop">Arraste fichas, tokens ou combatentes aqui</div>
+        <div class="vs-config-drop">${localize("config.dropHint")}</div>
         <ol class="vs-config-list">${rows}</ol>
       </section>
     `;
@@ -795,6 +1163,54 @@ class VSOverlayConfigApp extends Application {
 
   activateListeners(html) {
     super.activateListeners(html);
+
+    html.find(".vs-config-entry").on("click", (event) => {
+      if (event.target.closest("button")) return;
+
+      const row = event.currentTarget;
+      openOverlayEntrySheet(row.dataset.uuid);
+    });
+
+    html.find(".vs-config-entry").on("dragstart", (event) => {
+      const row = event.currentTarget;
+      const dragData = {
+        type: "VSOverlayEntry",
+        side: row.dataset.side,
+        uuid: row.dataset.uuid
+      };
+
+      row.classList.add("is-dragging");
+      event.originalEvent?.dataTransfer?.setData("text/plain", JSON.stringify(dragData));
+      event.originalEvent?.dataTransfer?.setData("application/json", JSON.stringify(dragData));
+      if (event.originalEvent?.dataTransfer) event.originalEvent.dataTransfer.effectAllowed = "move";
+    });
+
+    html.find(".vs-config-entry").on("dragend", (event) => {
+      event.currentTarget.classList.remove("is-dragging");
+      html.find(".vs-config-entry.is-drop-target").removeClass("is-drop-target");
+    });
+
+    html.find(".vs-config-entry").on("dragover", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.classList.add("is-drop-target");
+    });
+
+    html.find(".vs-config-entry").on("dragleave", (event) => {
+      event.currentTarget.classList.remove("is-drop-target");
+    });
+
+    html.find(".vs-config-entry").on("drop", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.classList.remove("is-drop-target");
+
+      const data = parseDropData(event);
+      if (data?.type !== "VSOverlayEntry") return;
+
+      await moveAssignedEntry(data.side, event.currentTarget.dataset.side, data.uuid, event.currentTarget.dataset.uuid);
+      this.render(false);
+    });
 
     html.find(".vs-config-side").on("dragover", (event) => {
       event.preventDefault();
@@ -810,13 +1226,18 @@ class VSOverlayConfigApp extends Application {
       event.currentTarget.classList.remove("is-dragging");
 
       const side = event.currentTarget.dataset.side;
-      const raw = event.originalEvent?.dataTransfer?.getData("text/plain") ?? event.dataTransfer?.getData("text/plain");
-      if (!raw) return;
+      const data = parseDropData(event);
+      if (!data) return;
 
-      const data = JSON.parse(raw);
+      if (data.type === "VSOverlayEntry") {
+        await moveAssignedEntry(data.side, side, data.uuid);
+        this.render(false);
+        return;
+      }
+
       const entry = await createEntryFromDropData(data);
       if (!entry) {
-        ui.notifications?.warn("Nao consegui ler esse item arrastado para o VS Overlay.");
+        ui.notifications?.warn(localize("notifications.dropReadFailed"));
         return;
       }
 
@@ -842,7 +1263,7 @@ class VSOverlayConfigApp extends Application {
       const icon = event.currentTarget.querySelector("i");
       icon?.classList.toggle("fa-eye", hidden);
       icon?.classList.toggle("fa-eye-slash", !hidden);
-      event.currentTarget.title = hidden ? "Revelar no overlay" : "Esconder do overlay";
+      event.currentTarget.title = hidden ? localize("config.reveal") : localize("config.hide");
       setAssignedEntryHidden(row.dataset.side, row.dataset.uuid, hidden);
     });
   }

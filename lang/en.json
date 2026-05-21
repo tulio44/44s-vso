@@ -1,0 +1,21 @@
+{
+  "vs-combat-overlay.settings.enabled.name": "VS Overlay enabled",
+  "vs-combat-overlay.settings.enabled.hint": "Shows the VS overlay during combat.",
+  "vs-combat-overlay.controls.enable": "Enable VS Overlay",
+  "vs-combat-overlay.controls.disable": "Disable VS Overlay",
+  "vs-combat-overlay.controls.config": "Configure VS Overlay sides",
+  "vs-combat-overlay.hud.markActive": "Mark as active in VS Overlay",
+  "vs-combat-overlay.hud.markDefeated": "Mark as defeated in VS Overlay",
+  "vs-combat-overlay.common.unknown": "Unknown",
+  "vs-combat-overlay.config.title": "VS Overlay",
+  "vs-combat-overlay.config.allies": "Allies",
+  "vs-combat-overlay.config.enemies": "Enemies",
+  "vs-combat-overlay.config.openSheet": "Open sheet",
+  "vs-combat-overlay.config.toggleDefeated": "Toggle defeated",
+  "vs-combat-overlay.config.reveal": "Show in overlay",
+  "vs-combat-overlay.config.hide": "Hide from overlay",
+  "vs-combat-overlay.config.remove": "Remove",
+  "vs-combat-overlay.config.dropHint": "Drag actors, tokens, or combatants here",
+  "vs-combat-overlay.config.hiddenSuffix": " (hidden)",
+  "vs-combat-overlay.notifications.dropReadFailed": "I could not read that dropped item for the VS Overlay."
+}

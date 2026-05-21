@@ -1,0 +1,21 @@
+{
+  "vs-combat-overlay.settings.enabled.name": "VS Overlay ativo",
+  "vs-combat-overlay.settings.enabled.hint": "Mostra o overlay VS durante combates.",
+  "vs-combat-overlay.controls.enable": "Ativar VS Overlay",
+  "vs-combat-overlay.controls.disable": "Desativar VS Overlay",
+  "vs-combat-overlay.controls.config": "Configurar lados do VS Overlay",
+  "vs-combat-overlay.hud.markActive": "Marcar como ativo no VS Overlay",
+  "vs-combat-overlay.hud.markDefeated": "Marcar como derrotado no VS Overlay",
+  "vs-combat-overlay.common.unknown": "Desconhecido",
+  "vs-combat-overlay.config.title": "VS Overlay",
+  "vs-combat-overlay.config.allies": "Aliados",
+  "vs-combat-overlay.config.enemies": "Inimigos",
+  "vs-combat-overlay.config.openSheet": "Abrir ficha",
+  "vs-combat-overlay.config.toggleDefeated": "Alternar derrotado",
+  "vs-combat-overlay.config.reveal": "Revelar no overlay",
+  "vs-combat-overlay.config.hide": "Esconder do overlay",
+  "vs-combat-overlay.config.remove": "Remover",
+  "vs-combat-overlay.config.dropHint": "Arraste fichas, tokens ou combatentes aqui",
+  "vs-combat-overlay.config.hiddenSuffix": " (oculto)",
+  "vs-combat-overlay.notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o VS Overlay."
+}
