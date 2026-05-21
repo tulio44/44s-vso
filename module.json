@@ -1,0 +1,21 @@
+{
+  "id": "vs-combat-overlay",
+  "title": "VS Combat Overlay",
+  "description": "Adds a fighting game style VS overlay when combat starts.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "Chat do Sobe-Desce"
+    }
+  ],
+  "compatibility": {
+    "minimum": "11",
+    "verified": "13"
+  },
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/overlay.css"
+  ]
+}
