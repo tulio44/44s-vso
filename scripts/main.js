@@ -27,7 +27,6 @@ const LOCALIZATION_FALLBACKS = {
     "config.enemies": "Inimigos",
     "config.openSheet": "Abrir ficha",
     "config.toggleDefeated": "Alternar derrotado",
-    "config.adjustImage": "Ajustar imagem",
     "config.reveal": "Revelar no overlay",
     "config.hide": "Esconder do overlay",
     "config.remove": "Remover",
@@ -35,6 +34,7 @@ const LOCALIZATION_FALLBACKS = {
     "imageAdjust.zoom": "Zoom",
     "imageAdjust.horizontal": "Horizontal",
     "imageAdjust.vertical": "Vertical",
+    "imageAdjust.flip": "Inverter imagem",
     "imageAdjust.reset": "Resetar",
     "imageAdjust.save": "Salvar",
     "imageAdjust.cancel": "Cancelar",
@@ -64,7 +64,6 @@ const LOCALIZATION_FALLBACKS = {
     "config.enemies": "Enemies",
     "config.openSheet": "Open sheet",
     "config.toggleDefeated": "Toggle defeated",
-    "config.adjustImage": "Adjust image",
     "config.reveal": "Show in overlay",
     "config.hide": "Hide from overlay",
     "config.remove": "Remove",
@@ -72,6 +71,7 @@ const LOCALIZATION_FALLBACKS = {
     "imageAdjust.zoom": "Zoom",
     "imageAdjust.horizontal": "Horizontal",
     "imageAdjust.vertical": "Vertical",
+    "imageAdjust.flip": "Flip image",
     "imageAdjust.reset": "Reset",
     "imageAdjust.save": "Save",
     "imageAdjust.cancel": "Cancel",
@@ -158,6 +158,13 @@ Hooks.on("getSceneControlButtons", addSceneControlButtons);
 Hooks.on("getActorSheetHeaderButtons", addActorSheetHeaderButton);
 Hooks.on("getApplicationHeaderButtons", addActorSheetHeaderButton);
 Hooks.on("renderActorSheet", addActorSheetHeaderButtonFallback);
+Hooks.on("renderApplicationV2", addActorSheetHeaderButtonFallback);
+Hooks.on("renderActorSheet5eCharacter", addActorSheetHeaderButtonFallback);
+Hooks.on("renderActorSheet5eNPC", addActorSheetHeaderButtonFallback);
+Hooks.on("renderActorSheet5eVehicle", addActorSheetHeaderButtonFallback);
+Hooks.on("renderActorSheet5eCharacter2", addActorSheetHeaderButtonFallback);
+Hooks.on("renderActorSheet5eNPC2", addActorSheetHeaderButtonFallback);
+Hooks.on("renderActorSheet5eVehicle2", addActorSheetHeaderButtonFallback);
 Hooks.on("renderTokenHUD", addDefeatedHudButton);
 
 function refreshVSOverlay(options = {}) {
@@ -283,10 +290,23 @@ function openConfigApp() {
   configApp.render(true);
 }
 
+function getActorFromSheetApp(app) {
+  if (app?.constructor?.name === "VSOverlayImageAdjustApp") return null;
+  const candidates = [
+    app?.object,
+    app?.document,
+    app?.options?.document,
+    app?.object?.actor,
+    app?.document?.actor
+  ];
+  return candidates.find((candidate) => candidate?.documentName === "Actor") ?? null;
+}
+
 function addActorSheetHeaderButton(app, buttons) {
-  const actor = app?.object?.documentName === "Actor" ? app.object : null;
+  const actor = getActorFromSheetApp(app);
   if (!Array.isArray(buttons)) return;
   if (!actor || (!game.user?.isGM && !actor.isOwner)) return;
+  if (game.system?.id === "dnd5e") return;
   if (buttons.some((button) => button.class === "vs-combat-overlay-adjust-image")) return;
 
   buttons.unshift({
@@ -298,15 +318,21 @@ function addActorSheetHeaderButton(app, buttons) {
 }
 
 function addActorSheetHeaderButtonFallback(app, html) {
-  const actor = app?.object?.documentName === "Actor" ? app.object : null;
+  const actor = getActorFromSheetApp(app);
   if (!actor || (!game.user?.isGM && !actor.isOwner)) return;
 
-  const root = app.element?.[0] ?? html?.[0]?.closest?.(".app");
+  const root = app.element instanceof Element ? app.element : app.element?.[0] ?? getHtmlRootElement(html) ?? html?.[0]?.closest?.(".app");
+  if (isDnd5eActorSheetRoot(root)) {
+    addDnd5eActorSheetAdjustButton(app, root, actor);
+    return;
+  }
+
   const header = root?.querySelector?.(".window-header");
   if (!header || header.querySelector(".vs-combat-overlay-adjust-image")) return;
 
   const button = document.createElement("a");
   button.className = "header-button vs-combat-overlay-adjust-image";
+  button.title = localize("imageAdjust.title");
   button.innerHTML = `<i class="fas fa-crop-alt"></i> VS`;
   button.addEventListener("click", (event) => {
     event.preventDefault();
@@ -317,6 +343,32 @@ function addActorSheetHeaderButtonFallback(app, html) {
   const close = header.querySelector(".close");
   if (close) header.insertBefore(button, close);
   else header.appendChild(button);
+}
+
+function isDnd5eActorSheetRoot(root) {
+  return game.system?.id === "dnd5e" && (root?.classList?.contains("dnd5e2") || Boolean(root?.querySelector?.(".dnd5e2")));
+}
+
+function addDnd5eActorSheetAdjustButton(app, root, actor) {
+  if (!root) return;
+
+  root.querySelectorAll(".vs-combat-overlay-adjust-image").forEach((button) => button.remove());
+  patchDnd5eHeaderMenu(app, actor);
+}
+
+function patchDnd5eHeaderMenu(app, actor) {
+  if (app._vsCombatOverlayHeaderMenuPatched || typeof app._getHeaderControlContextEntries !== "function") return;
+
+  const original = app._getHeaderControlContextEntries.bind(app);
+  app._getHeaderControlContextEntries = function* vsCombatOverlayHeaderEntries() {
+    yield* original();
+    yield {
+      name: localize("imageAdjust.title"),
+      icon: `<i class="fas fa-crop-alt" inert></i>`,
+      callback: () => openImageAdjusterForActor(actor)
+    };
+  };
+  app._vsCombatOverlayHeaderMenuPatched = true;
 }
 
 function addDefeatedHudButton(app, html) {
@@ -587,25 +639,20 @@ function preloadImage(src) {
 }
 
 function createFighterColumns(entries, side, context = {}) {
-  const visibleEntries = entries;
-  const slotCount = getDisplayCount(visibleEntries);
-  if (!slotCount) return "";
-
-  return Array.from({ length: slotCount }, (_, index) => {
-    const entry = visibleEntries[index];
-    return entry ? createFighterPanel(entry, side, context) : "";
-  }).join("");
+  if (!entries.length) return "";
+  return entries.map((entry) => createFighterPanel(entry, side, context)).join("");
 }
 
 function createFighterPanel(entry, side, { shouldAnimate = false, knownUuids = new Set(), newUuids = new Set() } = {}) {
   const img = entry.img || FALLBACK_IMG;
   const name = entry.name || localize("common.unknown");
-  const imageStyle = getEntryImageStyle(entry);
+  const imageStyle = getEntryImageStyle(entry, side);
   const isNew = !shouldAnimate && entry.uuid && (newUuids.has(entry.uuid) || !knownUuids.has(entry.uuid));
 
   return `
     <article class="vs-fighter-slot ${entry.defeated ? "is-defeated" : ""} ${isNew ? "is-pending-new" : ""}" data-side="${side}" data-uuid="${escapeAttr(entry.uuid ?? "")}">
       <div class="vs-fighter-panel" data-img="${escapeAttr(img)}" style="${imageStyle}">
+        <div class="vs-fighter-image"></div>
         <div class="vs-fighter-shade"></div>
       </div>
       <div class="vs-fighter-name" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
@@ -613,17 +660,15 @@ function createFighterPanel(entry, side, { shouldAnimate = false, knownUuids = n
   `;
 }
 
-function getEntryImageStyle(entry) {
+function getEntryImageStyle(entry, side = "left") {
   const fit = normalizeImageFit(entry?.imageFit);
-  return `--fighter-image-x: ${fit.x}%; --fighter-image-y: ${fit.y}%; --fighter-image-zoom: ${fit.zoom};`;
-}
-
-function getDisplayCount(entries) {
-  return entries.length || 0;
+  const sideFlip = side === "right" ? -1 : 1;
+  const imageFlip = fit.flip ? -1 : 1;
+  return `--fighter-image-x: ${fit.x}%; --fighter-image-y: ${fit.y}%; --fighter-image-zoom: ${fit.zoom}; --fighter-image-flip: ${sideFlip * imageFlip};`;
 }
 
 function getFighterCountStyle(entries) {
-  const count = getDisplayCount(entries);
+  const count = entries.length || 0;
   return `--fighter-count: ${count}; --fighter-grid-count: ${Math.max(1, count)};`;
 }
 
@@ -682,13 +727,15 @@ function getOverlayPanelPreviewSize(uuid, count = getDefaultPreviewCount(uuid)) 
   const panel = findRenderedPanelForEntry(uuid);
   const panelRect = panel?.getBoundingClientRect();
   const normalizedCount = clampNumber(count, 1, 4, 1);
+  const slant = getRenderedSlant(wall ?? panel);
+  const sidePadding = slant * 0.35;
   const aspectRatio = wallRect?.width > 0 && wallRect?.height > 0
-    ? (wallRect.width / normalizedCount) / wallRect.height
+    ? (((wallRect.width - sidePadding) / normalizedCount) + (slant * 2)) / wallRect.height
     : panelRect?.width > 0 && panelRect?.height > 0
       ? panelRect.width / panelRect.height
       : 0.72 / normalizedCount;
-  const maxWidth = 390;
-  const maxHeight = 680;
+  const maxWidth = 344;
+  const maxHeight = 430;
   let width = maxWidth;
   let height = width / aspectRatio;
 
@@ -698,19 +745,32 @@ function getOverlayPanelPreviewSize(uuid, count = getDefaultPreviewCount(uuid)) 
   }
 
   return {
-    aspectRatio,
-    width: Math.max(180, Math.round(width)),
-    height: Math.max(260, Math.round(height))
+    width: Math.max(128, Math.round(width)),
+    height: Math.max(220, Math.round(height))
   };
 }
 
+function getRenderedSlant(element) {
+  if (!(element instanceof Element)) return 48;
+  const value = getComputedStyle(element).getPropertyValue("--tp-slant");
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) ? number : 48;
+}
+
 function findRenderedWallForEntry(uuid) {
+  return findRenderedSlotForEntry(uuid)?.closest(".vs-fighter-wall") ?? null;
+}
+
+function findRenderedPanelForEntry(uuid) {
+  return findRenderedSlotForEntry(uuid)?.querySelector(".vs-fighter-panel") ?? null;
+}
+
+function findRenderedSlotForEntry(uuid) {
   const root = document.getElementById(OVERLAY_ID);
   if (!root || !uuid) return null;
 
   const directSlot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
-  const directWall = directSlot?.closest(".vs-fighter-wall");
-  if (directWall) return directWall;
+  if (directSlot) return directSlot;
 
   const actor = getActorFromOverlayDocument(findCombatantByUuid(uuid) ?? resolveEntryDocumentSync(uuid));
   if (!actor) return null;
@@ -722,32 +782,7 @@ function findRenderedWallForEntry(uuid) {
       if (entryActor?.uuid !== actor.uuid) continue;
 
       const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(entry.uuid)}"]`);
-      const wall = slot?.closest(".vs-fighter-wall");
-      if (wall) return wall;
-    }
-  }
-
-  return null;
-}
-
-function findRenderedPanelForEntry(uuid) {
-  const root = document.getElementById(OVERLAY_ID);
-  if (!root || !uuid) return null;
-
-  const direct = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"] .vs-fighter-panel`);
-  if (direct) return direct;
-
-  const actor = getActorFromOverlayDocument(findCombatantByUuid(uuid) ?? resolveEntryDocumentSync(uuid));
-  if (!actor) return null;
-
-  const sides = getCombatSides();
-  for (const side of ["allies", "enemies"]) {
-    for (const entry of sides[side]) {
-      const entryActor = getActorFromOverlayDocument(findCombatantByUuid(entry.uuid) ?? resolveEntryDocumentSync(entry.uuid));
-      if (entryActor?.uuid !== actor.uuid) continue;
-
-      const panel = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(entry.uuid)}"] .vs-fighter-panel`);
-      if (panel) return panel;
+      if (slot) return slot;
     }
   }
 
@@ -929,14 +964,6 @@ async function moveAssignedEntry(sourceSide, targetSide, uuid, beforeUuid = null
   await setCombatSides(sides);
 }
 
-async function toggleAssignedEntryDefeated(side, uuid) {
-  const sides = getCombatSides();
-  const entry = sides[side].find((candidate) => candidate.uuid === uuid);
-  if (!entry) return;
-
-  setAssignedEntryDefeated(side, uuid, !entry.defeated);
-}
-
 function setAssignedEntryDefeated(side, uuid, defeated) {
   const entry = getCombatSides()[side]?.find((candidate) => candidate.uuid === uuid);
   if (entry) entry.defeated = defeated;
@@ -947,14 +974,6 @@ function setAssignedEntryDefeated(side, uuid, defeated) {
   else playRecoveryAnimation(uuid);
 
   persistAssignedEntryState(side, uuid, { defeated }, findCombatantByUuid(uuid));
-}
-
-async function toggleAssignedEntryHidden(side, uuid) {
-  const sides = getCombatSides();
-  const entry = sides[side].find((candidate) => candidate.uuid === uuid);
-  if (!entry) return;
-
-  setAssignedEntryHidden(side, uuid, !entry.hidden);
 }
 
 function setAssignedEntryHidden(side, uuid, hidden) {
@@ -1129,7 +1148,8 @@ function normalizeImageFit(fit = {}) {
   return {
     x: clampNumber(fit.x, 0, 100, 50),
     y: clampNumber(fit.y, 0, 100, 50),
-    zoom: clampNumber(fit.zoom, 1, 3, 1)
+    zoom: clampNumber(fit.zoom, 1, 3, 1),
+    flip: Boolean(fit.flip)
   };
 }
 
@@ -1243,7 +1263,8 @@ function getEntryUuidSet(entries) {
 
 function applyPanelImages(root) {
   root.querySelectorAll(".vs-fighter-panel[data-img]").forEach((panel) => {
-    panel.style.backgroundImage = `url("${panel.dataset.img}")`;
+    const image = panel.querySelector(".vs-fighter-image");
+    if (image) image.style.backgroundImage = `url("${panel.dataset.img}")`;
   });
 }
 
@@ -1602,7 +1623,7 @@ class VSOverlayImageAdjustApp extends Application {
       id: "vs-combat-overlay-image-adjust",
       title: localize("imageAdjust.title"),
       classes: ["vs-image-adjust"],
-      width: 430,
+      width: 360,
       height: "auto",
       resizable: false
     });
@@ -1621,7 +1642,8 @@ class VSOverlayImageAdjustApp extends Application {
           `).join("")}
         </div>
         <div class="vs-image-adjust-preview-stage">
-          <div class="vs-image-adjust-preview" style="--vs-preview-width: ${this.previewSize.width}px; --vs-preview-height: ${this.previewSize.height}px; --fighter-image-x: ${this.fit.x}%; --fighter-image-y: ${this.fit.y}%; --fighter-image-zoom: ${this.fit.zoom}; background-image: url('${escapeAttr(img)}');">
+          <div class="vs-image-adjust-preview" style="--vs-preview-width: ${this.previewSize.width}px; --vs-preview-height: ${this.previewSize.height}px; --fighter-image-x: ${this.fit.x}%; --fighter-image-y: ${this.fit.y}%; --fighter-image-zoom: ${this.fit.zoom}; --fighter-image-flip: ${this.fit.flip ? -1 : 1};">
+            <div class="vs-image-adjust-picture" style="background-image: url('${escapeAttr(img)}');"></div>
             <div class="vs-image-adjust-name">${escapeHtml(name)}</div>
           </div>
         </div>
@@ -1641,6 +1663,10 @@ class VSOverlayImageAdjustApp extends Application {
           <span>${localize("imageAdjust.vertical")}</span>
           <input type="range" name="y" min="0" max="100" step="1" value="${this.fit.y}">
         </label>
+        <button type="button" class="vs-image-adjust-flip ${this.fit.flip ? "active" : ""}" data-action="flip" aria-pressed="${this.fit.flip}">
+          <i class="fas fa-arrows-alt-h"></i>
+          <span>${localize("imageAdjust.flip")}</span>
+        </button>
         <div class="vs-image-adjust-actions">
           <button type="button" data-action="reset">${localize("imageAdjust.reset")}</button>
           <button type="button" data-action="cancel">${localize("imageAdjust.cancel")}</button>
@@ -1679,6 +1705,15 @@ class VSOverlayImageAdjustApp extends Application {
 
     html.find("input[name='y']").on("input", (event) => {
       this.fit.y = clampNumber(event.currentTarget.value, 0, 100, 50);
+      this.updatePreview(preview);
+    });
+
+    html.find("button[data-action='flip']").on("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.fit.flip = !this.fit.flip;
+      event.currentTarget.classList.toggle("active", this.fit.flip);
+      event.currentTarget.setAttribute("aria-pressed", String(this.fit.flip));
       this.updatePreview(preview);
     });
 
@@ -1753,6 +1788,7 @@ class VSOverlayImageAdjustApp extends Application {
     preview.style.setProperty("--fighter-image-x", `${this.fit.x}%`);
     preview.style.setProperty("--fighter-image-y", `${this.fit.y}%`);
     preview.style.setProperty("--fighter-image-zoom", String(this.fit.zoom));
+    preview.style.setProperty("--fighter-image-flip", this.fit.flip ? "-1" : "1");
   }
 
   stepZoom(html, preview, delta) {
@@ -1767,9 +1803,14 @@ class VSOverlayImageAdjustApp extends Application {
     const zoom = root.querySelector("input[name='zoom']");
     const x = root.querySelector("input[name='x']");
     const y = root.querySelector("input[name='y']");
+    const flip = root.querySelector("button[data-action='flip']");
     if (zoom) zoom.value = this.fit.zoom;
     if (x) x.value = this.fit.x;
     if (y) y.value = this.fit.y;
+    if (flip) {
+      flip.classList.toggle("active", this.fit.flip);
+      flip.setAttribute("aria-pressed", String(this.fit.flip));
+    }
   }
 
   getPreviewEntry() {
