@@ -13,6 +13,10 @@
   z-index: 8;
 }
 
+#pause {
+  z-index: 100;
+}
+
 #vs-combat-overlay-root.is-enter-prep {
   visibility: hidden;
 }
@@ -247,6 +251,9 @@
 }
 
 .vs-fighter-panel {
+  --fighter-image-x: 50%;
+  --fighter-image-y: 50%;
+  --fighter-image-zoom: 1;
   position: absolute;
   inset: 0;
   background: rgba(3, 4, 6, 0.84);
@@ -264,11 +271,11 @@
   position: absolute;
   inset: 0;
   background-image: inherit;
-  background-position: center center;
+  background-position: var(--fighter-image-x) var(--fighter-image-y);
   background-repeat: no-repeat;
   background-size: cover;
-  transform: scaleX(var(--fighter-image-flip));
-  transform-origin: 50% 72%;
+  transform: scaleX(var(--fighter-image-flip)) scale(var(--fighter-image-zoom));
+  transform-origin: var(--fighter-image-x) var(--fighter-image-y);
   will-change: transform, filter;
 }
 
@@ -602,17 +609,17 @@
 @keyframes vs-fighter-breath {
   0%,
   100% {
-    transform: scaleX(var(--fighter-image-flip)) translateY(0) scale(1, 1);
+    transform: scaleX(var(--fighter-image-flip)) translateY(0) scale(calc(var(--fighter-image-zoom) * 1), calc(var(--fighter-image-zoom) * 1));
     filter: brightness(1);
   }
 
   46% {
-    transform: scaleX(var(--fighter-image-flip)) translateY(-0.25%) scale(1.004, 1.007);
+    transform: scaleX(var(--fighter-image-flip)) translateY(-0.25%) scale(calc(var(--fighter-image-zoom) * 1.004), calc(var(--fighter-image-zoom) * 1.007));
     filter: brightness(1.008);
   }
 
   62% {
-    transform: scaleX(var(--fighter-image-flip)) translateY(-0.12%) scale(1.002, 1.004);
+    transform: scaleX(var(--fighter-image-flip)) translateY(-0.12%) scale(calc(var(--fighter-image-zoom) * 1.002), calc(var(--fighter-image-zoom) * 1.004));
     filter: brightness(1.004);
   }
 }
@@ -848,6 +855,129 @@
   cursor: pointer;
   height: 28px;
   padding: 0;
+}
+
+.vs-image-adjust .window-content {
+  padding: 12px;
+}
+
+.vs-image-adjust-form {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.vs-image-adjust-counts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.vs-image-adjust-counts button {
+  height: 28px;
+  padding: 0;
+}
+
+.vs-image-adjust-counts button.active {
+  border-color: #67e8f9;
+  box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.5) inset;
+  font-weight: 700;
+}
+
+.vs-image-adjust-preview-stage {
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  height: 420px;
+  overflow: hidden;
+}
+
+.vs-image-adjust-preview {
+  --vs-preview-width: 390px;
+  --vs-preview-height: 542px;
+  --fighter-image-x: 50%;
+  --fighter-image-y: 50%;
+  --fighter-image-zoom: 1;
+  --tp-slant: 34px;
+  position: relative;
+  width: min(100%, var(--vs-preview-width));
+  height: min(100%, var(--vs-preview-height));
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background-color: rgba(3, 4, 6, 0.92);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.78);
+  clip-path: polygon(0 0, calc(100% - var(--tp-slant)) 0, 100% 100%, var(--tp-slant) 100%);
+  cursor: grab;
+  user-select: none;
+}
+
+.vs-image-adjust-preview:active {
+  cursor: grabbing;
+}
+
+.vs-image-adjust-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: inherit;
+  background-position: var(--fighter-image-x) var(--fighter-image-y);
+  background-repeat: no-repeat;
+  background-size: cover;
+  transform: scale(var(--fighter-image-zoom));
+  transform-origin: var(--fighter-image-x) var(--fighter-image-y);
+}
+
+.vs-image-adjust-name {
+  position: absolute;
+  left: var(--tp-slant);
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.74);
+  color: #f7fbff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.vs-image-adjust-zoom,
+.vs-image-adjust-range {
+  display: grid;
+  gap: 6px;
+}
+
+.vs-image-adjust-zoom div {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+.vs-image-adjust-zoom input,
+.vs-image-adjust-range input {
+  width: 100%;
+}
+
+.vs-image-adjust-zoom button {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+}
+
+.vs-image-adjust-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @media (max-width: 900px) {

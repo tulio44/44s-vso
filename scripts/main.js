@@ -2,12 +2,20 @@ const MODULE_ID = "vs-combat-overlay";
 const OVERLAY_ID = "vs-combat-overlay-root";
 const FALLBACK_IMG = "icons/svg/mystery-man.svg";
 const SETTING_ENABLED = "enabled";
+const SETTING_IMAGE_SOURCE = "imageSource";
+const IMAGE_SOURCE_TOKEN = "token";
+const IMAGE_SOURCE_ARTWORK = "artwork";
 const FLAG_DEFEATED = "defeated";
+const FLAG_IMAGE_FIT = "imageFit";
 const FLAG_SIDES = "sides";
 const LOCALIZATION_FALLBACKS = {
   "pt-BR": {
     "settings.enabled.name": "VS Overlay ativo",
     "settings.enabled.hint": "Mostra o overlay VS durante combates.",
+    "settings.imageSource.name": "Imagem dos personagens",
+    "settings.imageSource.hint": "Escolhe qual imagem o overlay VS usa para cada personagem.",
+    "settings.imageSource.token": "Token",
+    "settings.imageSource.artwork": "Arte do personagem",
     "controls.enable": "Ativar VS Overlay",
     "controls.disable": "Desativar VS Overlay",
     "controls.config": "Configurar lados do VS Overlay",
@@ -19,9 +27,21 @@ const LOCALIZATION_FALLBACKS = {
     "config.enemies": "Inimigos",
     "config.openSheet": "Abrir ficha",
     "config.toggleDefeated": "Alternar derrotado",
+    "config.adjustImage": "Ajustar imagem",
     "config.reveal": "Revelar no overlay",
     "config.hide": "Esconder do overlay",
     "config.remove": "Remover",
+    "imageAdjust.title": "Ajustar imagem VS",
+    "imageAdjust.zoom": "Zoom",
+    "imageAdjust.horizontal": "Horizontal",
+    "imageAdjust.vertical": "Vertical",
+    "imageAdjust.reset": "Resetar",
+    "imageAdjust.save": "Salvar",
+    "imageAdjust.cancel": "Cancelar",
+    "imageAdjust.noPermission": "Voce nao tem permissao para ajustar essa imagem.",
+    "imageAdjust.saved": "Ajuste da imagem salvo.",
+    "imageAdjust.saveRequested": "Pedido de ajuste enviado para o mestre.",
+    "imageAdjust.saveFailed": "Nao consegui salvar o ajuste da imagem.",
     "config.dropHint": "Arraste fichas, tokens ou combatentes aqui",
     "config.hiddenSuffix": " (oculto)",
     "notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o VS Overlay."
@@ -29,6 +49,10 @@ const LOCALIZATION_FALLBACKS = {
   en: {
     "settings.enabled.name": "VS Overlay enabled",
     "settings.enabled.hint": "Shows the VS overlay during combat.",
+    "settings.imageSource.name": "Character image",
+    "settings.imageSource.hint": "Chooses which image the VS overlay uses for each character.",
+    "settings.imageSource.token": "Token",
+    "settings.imageSource.artwork": "Character artwork",
     "controls.enable": "Enable VS Overlay",
     "controls.disable": "Disable VS Overlay",
     "controls.config": "Configure VS Overlay sides",
@@ -40,9 +64,21 @@ const LOCALIZATION_FALLBACKS = {
     "config.enemies": "Enemies",
     "config.openSheet": "Open sheet",
     "config.toggleDefeated": "Toggle defeated",
+    "config.adjustImage": "Adjust image",
     "config.reveal": "Show in overlay",
     "config.hide": "Hide from overlay",
     "config.remove": "Remove",
+    "imageAdjust.title": "Adjust VS image",
+    "imageAdjust.zoom": "Zoom",
+    "imageAdjust.horizontal": "Horizontal",
+    "imageAdjust.vertical": "Vertical",
+    "imageAdjust.reset": "Reset",
+    "imageAdjust.save": "Save",
+    "imageAdjust.cancel": "Cancel",
+    "imageAdjust.noPermission": "You do not have permission to adjust this image.",
+    "imageAdjust.saved": "Image adjustment saved.",
+    "imageAdjust.saveRequested": "Image adjustment request sent to the GM.",
+    "imageAdjust.saveFailed": "I could not save the image adjustment.",
     "config.dropHint": "Drag actors, tokens, or combatants here",
     "config.hiddenSuffix": " (hidden)",
     "notifications.dropReadFailed": "I could not read that dropped item for the VS Overlay."
@@ -75,6 +111,23 @@ Hooks.once("init", () => {
       ui.controls?.render?.();
     }
   });
+
+  game.settings.register(MODULE_ID, SETTING_IMAGE_SOURCE, {
+    name: localize("settings.imageSource.name"),
+    hint: localize("settings.imageSource.hint"),
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [IMAGE_SOURCE_TOKEN]: localize("settings.imageSource.token"),
+      [IMAGE_SOURCE_ARTWORK]: localize("settings.imageSource.artwork")
+    },
+    default: IMAGE_SOURCE_TOKEN,
+    onChange: () => {
+      refreshVSOverlay({ force: true });
+      configApp?.render(false);
+    }
+  });
 });
 
 Hooks.once("ready", () => {
@@ -90,16 +143,21 @@ Hooks.on("deleteCombat", () => {
   pendingCompactionSides = new Set();
 });
 Hooks.on("updateCombat", refreshVSOverlay);
+Hooks.on("updateScene", refreshVSOverlayForScene);
 Hooks.on("createCombatant", refreshVSOverlay);
 Hooks.on("updateCombatant", refreshVSOverlay);
 Hooks.on("deleteCombatant", refreshVSOverlay);
 Hooks.on("updateToken", refreshVSOverlay);
+Hooks.on("updateActor", () => scheduleOverlayRefresh({ force: true, delay: 50 }));
 Hooks.on("canvasReady", () => {
   refreshVSOverlay({ force: true });
   configApp?.render(false);
 });
 
 Hooks.on("getSceneControlButtons", addSceneControlButtons);
+Hooks.on("getActorSheetHeaderButtons", addActorSheetHeaderButton);
+Hooks.on("getApplicationHeaderButtons", addActorSheetHeaderButton);
+Hooks.on("renderActorSheet", addActorSheetHeaderButtonFallback);
 Hooks.on("renderTokenHUD", addDefeatedHudButton);
 
 function refreshVSOverlay(options = {}) {
@@ -223,6 +281,42 @@ function findTokenControls(controls) {
 function openConfigApp() {
   configApp ??= new VSOverlayConfigApp();
   configApp.render(true);
+}
+
+function addActorSheetHeaderButton(app, buttons) {
+  const actor = app?.object?.documentName === "Actor" ? app.object : null;
+  if (!Array.isArray(buttons)) return;
+  if (!actor || (!game.user?.isGM && !actor.isOwner)) return;
+  if (buttons.some((button) => button.class === "vs-combat-overlay-adjust-image")) return;
+
+  buttons.unshift({
+    label: "VS",
+    class: "vs-combat-overlay-adjust-image",
+    icon: "fas fa-crop-alt",
+    onclick: () => openImageAdjusterForActor(actor)
+  });
+}
+
+function addActorSheetHeaderButtonFallback(app, html) {
+  const actor = app?.object?.documentName === "Actor" ? app.object : null;
+  if (!actor || (!game.user?.isGM && !actor.isOwner)) return;
+
+  const root = app.element?.[0] ?? html?.[0]?.closest?.(".app");
+  const header = root?.querySelector?.(".window-header");
+  if (!header || header.querySelector(".vs-combat-overlay-adjust-image")) return;
+
+  const button = document.createElement("a");
+  button.className = "header-button vs-combat-overlay-adjust-image";
+  button.innerHTML = `<i class="fas fa-crop-alt"></i> VS`;
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openImageAdjusterForActor(actor);
+  });
+
+  const close = header.querySelector(".close");
+  if (close) header.insertBefore(button, close);
+  else header.appendChild(button);
 }
 
 function addDefeatedHudButton(app, html) {
@@ -506,16 +600,22 @@ function createFighterColumns(entries, side, context = {}) {
 function createFighterPanel(entry, side, { shouldAnimate = false, knownUuids = new Set(), newUuids = new Set() } = {}) {
   const img = entry.img || FALLBACK_IMG;
   const name = entry.name || localize("common.unknown");
+  const imageStyle = getEntryImageStyle(entry);
   const isNew = !shouldAnimate && entry.uuid && (newUuids.has(entry.uuid) || !knownUuids.has(entry.uuid));
 
   return `
     <article class="vs-fighter-slot ${entry.defeated ? "is-defeated" : ""} ${isNew ? "is-pending-new" : ""}" data-side="${side}" data-uuid="${escapeAttr(entry.uuid ?? "")}">
-      <div class="vs-fighter-panel" data-img="${escapeAttr(img)}">
+      <div class="vs-fighter-panel" data-img="${escapeAttr(img)}" style="${imageStyle}">
         <div class="vs-fighter-shade"></div>
       </div>
       <div class="vs-fighter-name" title="${escapeAttr(name)}">${escapeHtml(name)}</div>
     </article>
   `;
+}
+
+function getEntryImageStyle(entry) {
+  const fit = normalizeImageFit(entry?.imageFit);
+  return `--fighter-image-x: ${fit.x}%; --fighter-image-y: ${fit.y}%; --fighter-image-zoom: ${fit.zoom};`;
 }
 
 function getDisplayCount(entries) {
@@ -553,6 +653,125 @@ async function resolveOverlayEntryDocument(uuid) {
   if (combatant) return combatant;
 
   return fromUuid(uuid);
+}
+
+function getActorFromOverlayDocument(document) {
+  return document?.actor ?? (document?.documentName === "Actor" ? document : null);
+}
+
+function getAssignedEntry(uuid) {
+  const sides = getCombatSides();
+  for (const side of ["allies", "enemies"]) {
+    const entry = sides[side].find((candidate) => candidate.uuid === uuid);
+    if (entry) return { side, entry: normalizeEntryImage(entry) };
+  }
+
+  return null;
+}
+
+function getDefaultPreviewCount(uuid) {
+  const assigned = getAssignedEntry(uuid);
+  const entries = assigned ? getCombatSides()[assigned.side] : null;
+  const visibleCount = entries?.filter((entry) => !entry.hidden).length ?? 1;
+  return clampNumber(visibleCount, 1, 4, 1);
+}
+
+function getOverlayPanelPreviewSize(uuid, count = getDefaultPreviewCount(uuid)) {
+  const wall = findRenderedWallForEntry(uuid);
+  const wallRect = wall?.getBoundingClientRect();
+  const panel = findRenderedPanelForEntry(uuid);
+  const panelRect = panel?.getBoundingClientRect();
+  const normalizedCount = clampNumber(count, 1, 4, 1);
+  const aspectRatio = wallRect?.width > 0 && wallRect?.height > 0
+    ? (wallRect.width / normalizedCount) / wallRect.height
+    : panelRect?.width > 0 && panelRect?.height > 0
+      ? panelRect.width / panelRect.height
+      : 0.72 / normalizedCount;
+  const maxWidth = 390;
+  const maxHeight = 680;
+  let width = maxWidth;
+  let height = width / aspectRatio;
+
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * aspectRatio;
+  }
+
+  return {
+    aspectRatio,
+    width: Math.max(180, Math.round(width)),
+    height: Math.max(260, Math.round(height))
+  };
+}
+
+function findRenderedWallForEntry(uuid) {
+  const root = document.getElementById(OVERLAY_ID);
+  if (!root || !uuid) return null;
+
+  const directSlot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
+  const directWall = directSlot?.closest(".vs-fighter-wall");
+  if (directWall) return directWall;
+
+  const actor = getActorFromOverlayDocument(findCombatantByUuid(uuid) ?? resolveEntryDocumentSync(uuid));
+  if (!actor) return null;
+
+  const sides = getCombatSides();
+  for (const side of ["allies", "enemies"]) {
+    for (const entry of sides[side]) {
+      const entryActor = getActorFromOverlayDocument(findCombatantByUuid(entry.uuid) ?? resolveEntryDocumentSync(entry.uuid));
+      if (entryActor?.uuid !== actor.uuid) continue;
+
+      const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(entry.uuid)}"]`);
+      const wall = slot?.closest(".vs-fighter-wall");
+      if (wall) return wall;
+    }
+  }
+
+  return null;
+}
+
+function findRenderedPanelForEntry(uuid) {
+  const root = document.getElementById(OVERLAY_ID);
+  if (!root || !uuid) return null;
+
+  const direct = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"] .vs-fighter-panel`);
+  if (direct) return direct;
+
+  const actor = getActorFromOverlayDocument(findCombatantByUuid(uuid) ?? resolveEntryDocumentSync(uuid));
+  if (!actor) return null;
+
+  const sides = getCombatSides();
+  for (const side of ["allies", "enemies"]) {
+    for (const entry of sides[side]) {
+      const entryActor = getActorFromOverlayDocument(findCombatantByUuid(entry.uuid) ?? resolveEntryDocumentSync(entry.uuid));
+      if (entryActor?.uuid !== actor.uuid) continue;
+
+      const panel = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(entry.uuid)}"] .vs-fighter-panel`);
+      if (panel) return panel;
+    }
+  }
+
+  return null;
+}
+
+function openImageAdjusterForActor(actor) {
+  if (!actor || (!game.user?.isGM && !actor.isOwner)) {
+    ui.notifications?.warn(localize("imageAdjust.noPermission"));
+    return;
+  }
+
+  new VSOverlayImageAdjustApp(actor.uuid, { actor }).render(true);
+}
+
+async function canConfigureEntryImage(uuid, user = game.user) {
+  if (user?.isGM) return true;
+
+  const document = await resolveOverlayEntryDocument(uuid);
+  const actor = document?.actor ?? (document?.documentName === "Actor" ? document : null);
+  if (!actor) return false;
+
+  if (typeof actor.testUserPermission === "function") return actor.testUserPermission(user, "OWNER");
+  return Boolean(actor.isOwner);
 }
 
 function getCurrentCombat() {
@@ -611,6 +830,7 @@ async function setCombatSides(sides) {
   if (scene && storageDocument !== scene) await scene.setFlag(MODULE_ID, FLAG_SIDES, normalized);
 
   broadcastOverlayRefresh(normalized);
+  if (!isOverlayRefreshSuppressed()) scheduleOverlayRefresh({ force: true, sides: normalized });
   window.setTimeout(() => {
     if (pendingNewUuids.size) refreshVSOverlay();
   }, 80);
@@ -622,8 +842,8 @@ function hasConfiguredEntries(sides) {
 
 function getOverlaySignature(sides) {
   return JSON.stringify({
-    allies: sides.allies.map(getEntrySignature),
-    enemies: sides.enemies.map(getEntrySignature)
+    allies: sides.allies.map((entry) => getEntrySignature(normalizeEntryImage(entry))),
+    enemies: sides.enemies.map((entry) => getEntrySignature(normalizeEntryImage(entry)))
   });
 }
 
@@ -633,7 +853,8 @@ function getEntrySignature(entry) {
     img: entry.img,
     name: entry.name,
     hidden: Boolean(entry.hidden),
-    defeated: Boolean(entry.defeated)
+    defeated: Boolean(entry.defeated),
+    imageFit: normalizeImageFit(entry.imageFit)
   };
 }
 
@@ -649,6 +870,11 @@ function broadcastOverlayRefresh(sides = getCombatSides()) {
 }
 
 function handleSocketMessage(message) {
+  if (message?.type === "saveImageFit") {
+    handleImageFitSaveRequest(message);
+    return;
+  }
+
   if (message?.type !== "refresh") return;
 
   (message.newUuids ?? []).forEach((uuid) => pendingNewUuids.add(uuid));
@@ -755,6 +981,48 @@ async function updateAssignedEntry(uuid, updates) {
   await setCombatSides(sides);
 }
 
+async function persistEntryImageFit(uuid, imageFit) {
+  const fit = normalizeImageFit(imageFit);
+  const document = await resolveOverlayEntryDocument(uuid);
+  const actor = getActorFromOverlayDocument(document);
+
+  if (!actor) {
+    ui.notifications?.warn(localize("imageAdjust.noPermission"));
+    return;
+  }
+
+  if (game.user.isGM) {
+    await actor.setFlag(MODULE_ID, FLAG_IMAGE_FIT, fit);
+    return;
+  }
+
+  if (!actor.isOwner) {
+    ui.notifications?.warn(localize("imageAdjust.noPermission"));
+    return;
+  }
+
+  game.socket?.emit(`module.${MODULE_ID}`, {
+    type: "saveImageFit",
+    userId: game.user.id,
+    uuid,
+    imageFit: fit
+  });
+  ui.notifications?.info(localize("imageAdjust.saveRequested"));
+}
+
+async function handleImageFitSaveRequest(message) {
+  if (!game.user.isGM || !message?.uuid) return;
+
+  const user = game.users?.get(message.userId);
+  if (!(await canConfigureEntryImage(message.uuid, user))) return;
+
+  const document = await resolveOverlayEntryDocument(message.uuid);
+  const actor = getActorFromOverlayDocument(document);
+  if (!actor) return;
+
+  await actor.setFlag(MODULE_ID, FLAG_IMAGE_FIT, normalizeImageFit(message.imageFit));
+}
+
 async function persistDefeatedState(uuid, defeated, combatant = findCombatantByUuid(uuid)) {
   await updateAssignedEntry(uuid, { defeated });
   suppressOverlayRefresh();
@@ -844,16 +1112,35 @@ function getCombatantFromDocument(document) {
 
 function normalizeEntryImage(entry) {
   const combatant = findCombatantByUuid(entry.uuid);
-  if (!combatant) return entry;
+  const document = combatant ?? resolveEntryDocumentSync(entry.uuid);
+  if (!document) return entry;
+  const actor = combatant?.actor ?? document.actor ?? (document.documentName === "Actor" ? document : null);
+  const token = combatant?.token ?? (document.documentName === "Token" ? document : null);
 
   return {
     ...entry,
-    img: getTokenImage({ combatant, token: combatant.token, actor: combatant.actor, document: combatant })
+    img: getTokenImage({ combatant, token, actor, document }),
+    imageFit: normalizeImageFit(actor?.getFlag?.(MODULE_ID, FLAG_IMAGE_FIT) ?? entry.imageFit)
   };
 }
 
+function normalizeImageFit(fit = {}) {
+  fit = fit ?? {};
+  return {
+    x: clampNumber(fit.x, 0, 100, 50),
+    y: clampNumber(fit.y, 0, 100, 50),
+    zoom: clampNumber(fit.zoom, 1, 3, 1)
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
 function getTokenImage({ combatant, token, actor, document }) {
-  return (
+  const tokenImage =
     token?.texture?.src ??
     token?.document?.texture?.src ??
     combatant?.token?.texture?.src ??
@@ -862,11 +1149,40 @@ function getTokenImage({ combatant, token, actor, document }) {
     document?.document?.texture?.src ??
     actor?.prototypeToken?.texture?.src ??
     document?.prototypeToken?.texture?.src ??
-    combatant?.img ??
+    combatant?.img;
+
+  const artworkImage =
     actor?.img ??
-    document?.img ??
-    FALLBACK_IMG
-  );
+    (document?.documentName === "Actor" ? document.img : null) ??
+    combatant?.actor?.img ??
+    document?.actor?.img;
+
+  if (getImageSourceSetting() === IMAGE_SOURCE_ARTWORK) return artworkImage ?? tokenImage ?? FALLBACK_IMG;
+
+  return tokenImage ?? artworkImage ?? document?.img ?? FALLBACK_IMG;
+}
+
+function getImageSourceSetting() {
+  try {
+    return game.settings.get(MODULE_ID, SETTING_IMAGE_SOURCE);
+  } catch (error) {
+    return IMAGE_SOURCE_TOKEN;
+  }
+}
+
+function resolveEntryDocumentSync(uuid) {
+  if (!uuid) return null;
+
+  const actorMatch = /^Actor\.([^.]+)$/.exec(uuid);
+  if (actorMatch) return game.actors?.get(actorMatch[1]) ?? null;
+
+  const sceneTokenMatch = /^Scene\.([^.]+)\.Token\.([^.]+)$/.exec(uuid);
+  if (sceneTokenMatch) return game.scenes?.get(sceneTokenMatch[1])?.tokens?.get(sceneTokenMatch[2]) ?? null;
+
+  const tokenMatch = /^Token\.([^.]+)$/.exec(uuid);
+  if (tokenMatch) return getCurrentScene()?.tokens?.get(tokenMatch[1]) ?? null;
+
+  return null;
 }
 
 function findCombatantForToken(token) {
@@ -898,6 +1214,17 @@ function getOverlayHost() {
   if (board && board.tagName !== "CANVAS") return board;
 
   return document.body;
+}
+
+function refreshVSOverlayForScene(scene) {
+  const currentScene = getCurrentScene();
+  if (scene && currentScene && scene.id !== currentScene.id) return;
+  if (isOverlayRefreshSuppressed()) return;
+  refreshVSOverlay({ force: true });
+}
+
+function isOverlayRefreshSuppressed() {
+  return Date.now() < suppressOverlayRefreshUntil;
 }
 
 function removeVSOverlay() {
@@ -1251,6 +1578,216 @@ function parseDropData(event) {
   return null;
 }
 
+function getHtmlRootElement(html) {
+  if (html instanceof Element) return html;
+  if (html?.jquery) return [...html].find((node) => node instanceof Element) ?? null;
+  if (html?.[0] instanceof Element) return html[0];
+  if (html?.[0]?.[0] instanceof Element) return html[0][0];
+  return null;
+}
+
+class VSOverlayImageAdjustApp extends Application {
+  constructor(uuid, options = {}) {
+    super(options);
+    this.uuid = uuid;
+    this.actor = options.actor ?? getActorFromOverlayDocument(resolveEntryDocumentSync(uuid)) ?? null;
+    this.fit = normalizeImageFit(this.actor?.getFlag?.(MODULE_ID, FLAG_IMAGE_FIT) ?? getAssignedEntry(uuid)?.entry?.imageFit);
+    this.previewCount = getDefaultPreviewCount(uuid);
+    this.previewSize = getOverlayPanelPreviewSize(uuid, this.previewCount);
+    this.dragState = null;
+  }
+
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: "vs-combat-overlay-image-adjust",
+      title: localize("imageAdjust.title"),
+      classes: ["vs-image-adjust"],
+      width: 430,
+      height: "auto",
+      resizable: false
+    });
+  }
+
+  async _renderInner() {
+    const entry = this.getPreviewEntry();
+    const img = entry?.img || FALLBACK_IMG;
+    const name = entry?.name || localize("common.unknown");
+
+    return $($.parseHTML(`
+      <div class="vs-image-adjust-form">
+        <div class="vs-image-adjust-counts">
+          ${[1, 2, 3, 4].map((count) => `
+            <button type="button" data-count="${count}" class="${count === this.previewCount ? "active" : ""}">${count}</button>
+          `).join("")}
+        </div>
+        <div class="vs-image-adjust-preview-stage">
+          <div class="vs-image-adjust-preview" style="--vs-preview-width: ${this.previewSize.width}px; --vs-preview-height: ${this.previewSize.height}px; --fighter-image-x: ${this.fit.x}%; --fighter-image-y: ${this.fit.y}%; --fighter-image-zoom: ${this.fit.zoom}; background-image: url('${escapeAttr(img)}');">
+            <div class="vs-image-adjust-name">${escapeHtml(name)}</div>
+          </div>
+        </div>
+        <label class="vs-image-adjust-zoom">
+          <span>${localize("imageAdjust.zoom")}</span>
+          <div>
+            <button type="button" data-action="zoom-out">-</button>
+            <input type="range" name="zoom" min="1" max="3" step="0.01" value="${this.fit.zoom}">
+            <button type="button" data-action="zoom-in">+</button>
+          </div>
+        </label>
+        <label class="vs-image-adjust-range">
+          <span>${localize("imageAdjust.horizontal")}</span>
+          <input type="range" name="x" min="0" max="100" step="1" value="${this.fit.x}">
+        </label>
+        <label class="vs-image-adjust-range">
+          <span>${localize("imageAdjust.vertical")}</span>
+          <input type="range" name="y" min="0" max="100" step="1" value="${this.fit.y}">
+        </label>
+        <div class="vs-image-adjust-actions">
+          <button type="button" data-action="reset">${localize("imageAdjust.reset")}</button>
+          <button type="button" data-action="cancel">${localize("imageAdjust.cancel")}</button>
+          <button type="button" data-action="save">${localize("imageAdjust.save")}</button>
+        </div>
+      </div>
+    `));
+  }
+
+  activateListeners(html) {
+    super.activateListeners(html);
+
+    const root = getHtmlRootElement(html);
+    const preview = root?.querySelector(".vs-image-adjust-preview");
+    this.updatePreview(preview);
+
+    html.find(".vs-image-adjust-counts button").on("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.previewCount = clampNumber(event.currentTarget.dataset.count, 1, 4, 1);
+      this.previewSize = getOverlayPanelPreviewSize(this.uuid, this.previewCount);
+      html.find(".vs-image-adjust-counts button").removeClass("active");
+      event.currentTarget.classList.add("active");
+      this.updatePreview(preview);
+    });
+
+    html.find("input[name='zoom']").on("input", (event) => {
+      this.fit.zoom = clampNumber(event.currentTarget.value, 1, 3, 1);
+      this.updatePreview(preview);
+    });
+
+    html.find("input[name='x']").on("input", (event) => {
+      this.fit.x = clampNumber(event.currentTarget.value, 0, 100, 50);
+      this.updatePreview(preview);
+    });
+
+    html.find("input[name='y']").on("input", (event) => {
+      this.fit.y = clampNumber(event.currentTarget.value, 0, 100, 50);
+      this.updatePreview(preview);
+    });
+
+    html.find("button[data-action='zoom-out']").on("click", () => this.stepZoom(html, preview, -0.1));
+    html.find("button[data-action='zoom-in']").on("click", () => this.stepZoom(html, preview, 0.1));
+
+    preview?.addEventListener("pointerdown", (event) => this.startDrag(event, preview));
+    preview?.addEventListener("pointermove", (event) => this.drag(event, preview));
+    preview?.addEventListener("pointerup", () => this.endDrag(preview));
+    preview?.addEventListener("pointercancel", () => this.endDrag(preview));
+
+    html.find("button[data-action='reset']").on("click", () => {
+      this.fit = normalizeImageFit();
+      this.syncInputs(root);
+      this.updatePreview(preview);
+    });
+
+    html.find("button[data-action='cancel']").on("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.close();
+    });
+
+    html.find("button[data-action='save']").on("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        await persistEntryImageFit(this.uuid, this.fit);
+        ui.notifications?.info(localize("imageAdjust.saved"));
+      } catch (error) {
+        console.warn(`${MODULE_ID} | Could not save image fit`, error);
+        ui.notifications?.warn(localize("imageAdjust.saveFailed"));
+      }
+    });
+  }
+
+  startDrag(event, preview) {
+    event.preventDefault();
+    preview.setPointerCapture?.(event.pointerId);
+    this.dragState = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: this.fit.x,
+      startY: this.fit.y
+    };
+  }
+
+  drag(event, preview) {
+    if (!this.dragState || this.dragState.pointerId !== event.pointerId) return;
+
+    const rect = preview.getBoundingClientRect();
+    const deltaX = ((event.clientX - this.dragState.startClientX) / rect.width) * 100;
+    const deltaY = ((event.clientY - this.dragState.startClientY) / rect.height) * 100;
+
+    this.fit.x = clampNumber(this.dragState.startX - deltaX, 0, 100, 50);
+    this.fit.y = clampNumber(this.dragState.startY - deltaY, 0, 100, 50);
+    this.syncInputs(getHtmlRootElement(this.element));
+    this.updatePreview(preview);
+  }
+
+  endDrag(preview) {
+    if (!this.dragState) return;
+    preview.releasePointerCapture?.(this.dragState.pointerId);
+    this.dragState = null;
+  }
+
+  updatePreview(preview) {
+    if (!preview) return;
+    preview.style.setProperty("--vs-preview-width", `${this.previewSize.width}px`);
+    preview.style.setProperty("--vs-preview-height", `${this.previewSize.height}px`);
+    preview.style.setProperty("--fighter-image-x", `${this.fit.x}%`);
+    preview.style.setProperty("--fighter-image-y", `${this.fit.y}%`);
+    preview.style.setProperty("--fighter-image-zoom", String(this.fit.zoom));
+  }
+
+  stepZoom(html, preview, delta) {
+    this.fit.zoom = clampNumber(this.fit.zoom + delta, 1, 3, 1);
+    this.syncInputs(getHtmlRootElement(html));
+    this.updatePreview(preview);
+  }
+
+  syncInputs(root) {
+    if (!root) return;
+
+    const zoom = root.querySelector("input[name='zoom']");
+    const x = root.querySelector("input[name='x']");
+    const y = root.querySelector("input[name='y']");
+    if (zoom) zoom.value = this.fit.zoom;
+    if (x) x.value = this.fit.x;
+    if (y) y.value = this.fit.y;
+  }
+
+  getPreviewEntry() {
+    const assigned = getAssignedEntry(this.uuid);
+    if (assigned?.entry) return assigned.entry;
+
+    const actor = this.actor ?? resolveEntryDocumentSync(this.uuid);
+    if (actor?.documentName !== "Actor") return null;
+
+    return normalizeEntryImage({
+      uuid: actor.uuid,
+      name: actor.name,
+      img: actor.img,
+      imageFit: actor.getFlag?.(MODULE_ID, FLAG_IMAGE_FIT)
+    });
+  }
+}
+
 class VSOverlayConfigApp extends Application {
   static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
@@ -1277,7 +1814,7 @@ class VSOverlayConfigApp extends Application {
   }
 
   createSideMarkup(side, label, entries) {
-    const rows = entries.map((entry) => `
+    const rows = entries.map(normalizeEntryImage).map((entry) => `
       <li class="vs-config-entry ${entry.defeated ? "is-defeated" : ""} ${entry.hidden ? "is-hidden" : ""}" data-side="${side}" data-uuid="${escapeAttr(entry.uuid)}" draggable="true" title="${localize("config.openSheet")}">
         <img src="${escapeAttr(entry.img || FALLBACK_IMG)}" alt="" />
         <span data-hidden-label="${escapeAttr(localize("config.hiddenSuffix"))}">${escapeHtml(entry.name || localize("common.unknown"))}</span>
