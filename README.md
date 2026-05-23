@@ -36,6 +36,10 @@ Players with ownership of an actor can open that actor's sheet and use the VS im
 
 44's VSO currently targets Foundry VTT versions 11 through 13.
 
+## Animation Notice
+
+44's VSO relies on browser rendering and CSS/Web Animations. Depending on the browser, hardware acceleration, system performance, and local settings, animations may stutter, play inconsistently, or fail to run as intended.
+
 ## Support
 
 If 44's VSO adds a little extra drama to your table, you can support development here:
