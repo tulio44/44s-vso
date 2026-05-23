@@ -1,4 +1,4 @@
-const MODULE_ID = "vs-combat-overlay";
+const MODULE_ID = "44s-vso";
 const OVERLAY_ID = "vs-combat-overlay-root";
 const FALLBACK_IMG = "icons/svg/mystery-man.svg";
 const SETTING_ENABLED = "enabled";
