@@ -10,19 +10,19 @@ const FLAG_IMAGE_FIT = "imageFit";
 const FLAG_SIDES = "sides";
 const LOCALIZATION_FALLBACKS = {
   "pt-BR": {
-    "settings.enabled.name": "VS Overlay ativo",
-    "settings.enabled.hint": "Mostra o overlay VS durante combates.",
+    "settings.enabled.name": "44's VSO ativo",
+    "settings.enabled.hint": "Mostra o 44's VSO durante combates.",
     "settings.imageSource.name": "Imagem dos personagens",
-    "settings.imageSource.hint": "Escolhe qual imagem o overlay VS usa para cada personagem.",
+    "settings.imageSource.hint": "Escolhe qual imagem o 44's VSO usa para cada personagem.",
     "settings.imageSource.token": "Token",
     "settings.imageSource.artwork": "Arte do personagem",
-    "controls.enable": "Ativar VS Overlay",
-    "controls.disable": "Desativar VS Overlay",
-    "controls.config": "Configurar lados do VS Overlay",
-    "hud.markActive": "Marcar como ativo no VS Overlay",
-    "hud.markDefeated": "Marcar como derrotado no VS Overlay",
+    "controls.enable": "Ativar 44's VSO",
+    "controls.disable": "Desativar 44's VSO",
+    "controls.config": "Configurar lados do 44's VSO",
+    "hud.markActive": "Marcar como ativo no 44's VSO",
+    "hud.markDefeated": "Marcar como derrotado no 44's VSO",
     "common.unknown": "Desconhecido",
-    "config.title": "VS Overlay",
+    "config.title": "44's VSO",
     "config.allies": "Aliados",
     "config.enemies": "Inimigos",
     "config.openSheet": "Abrir ficha",
@@ -30,7 +30,7 @@ const LOCALIZATION_FALLBACKS = {
     "config.reveal": "Revelar no overlay",
     "config.hide": "Esconder do overlay",
     "config.remove": "Remover",
-    "imageAdjust.title": "Ajustar imagem VS",
+    "imageAdjust.title": "Ajustar imagem do 44's VSO",
     "imageAdjust.zoom": "Zoom",
     "imageAdjust.horizontal": "Horizontal",
     "imageAdjust.vertical": "Vertical",
@@ -44,22 +44,22 @@ const LOCALIZATION_FALLBACKS = {
     "imageAdjust.saveFailed": "Nao consegui salvar o ajuste da imagem.",
     "config.dropHint": "Arraste fichas, tokens ou combatentes aqui",
     "config.hiddenSuffix": " (oculto)",
-    "notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o VS Overlay."
+    "notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o 44's VSO."
   },
   en: {
-    "settings.enabled.name": "VS Overlay enabled",
-    "settings.enabled.hint": "Shows the VS overlay during combat.",
+    "settings.enabled.name": "44's VSO enabled",
+    "settings.enabled.hint": "Shows 44's VSO during combat.",
     "settings.imageSource.name": "Character image",
-    "settings.imageSource.hint": "Chooses which image the VS overlay uses for each character.",
+    "settings.imageSource.hint": "Chooses which image 44's VSO uses for each character.",
     "settings.imageSource.token": "Token",
     "settings.imageSource.artwork": "Character artwork",
-    "controls.enable": "Enable VS Overlay",
-    "controls.disable": "Disable VS Overlay",
-    "controls.config": "Configure VS Overlay sides",
-    "hud.markActive": "Mark as active in VS Overlay",
-    "hud.markDefeated": "Mark as defeated in VS Overlay",
+    "controls.enable": "Enable 44's VSO",
+    "controls.disable": "Disable 44's VSO",
+    "controls.config": "Configure 44's VSO sides",
+    "hud.markActive": "Mark as active in 44's VSO",
+    "hud.markDefeated": "Mark as defeated in 44's VSO",
     "common.unknown": "Unknown",
-    "config.title": "VS Overlay",
+    "config.title": "44's VSO",
     "config.allies": "Allies",
     "config.enemies": "Enemies",
     "config.openSheet": "Open sheet",
@@ -67,7 +67,7 @@ const LOCALIZATION_FALLBACKS = {
     "config.reveal": "Show in overlay",
     "config.hide": "Hide from overlay",
     "config.remove": "Remove",
-    "imageAdjust.title": "Adjust VS image",
+    "imageAdjust.title": "Adjust 44's VSO image",
     "imageAdjust.zoom": "Zoom",
     "imageAdjust.horizontal": "Horizontal",
     "imageAdjust.vertical": "Vertical",
@@ -81,7 +81,7 @@ const LOCALIZATION_FALLBACKS = {
     "imageAdjust.saveFailed": "I could not save the image adjustment.",
     "config.dropHint": "Drag actors, tokens, or combatants here",
     "config.hiddenSuffix": " (hidden)",
-    "notifications.dropReadFailed": "I could not read that dropped item for the VS Overlay."
+    "notifications.dropReadFailed": "I could not read that dropped item for 44's VSO."
   }
 };
 
@@ -106,8 +106,8 @@ Hooks.once("init", () => {
     config: false,
     type: Boolean,
     default: true,
-    onChange: () => {
-      refreshVSOverlay();
+    onChange: (enabled) => {
+      handleOverlayEnabledChange(enabled);
       ui.controls?.render?.();
     }
   });
@@ -176,6 +176,7 @@ function refreshVSOverlay(options = {}) {
     removeVSOverlay();
     previousOverlayUuids = new Set();
     pendingNewUuids = new Set();
+    pendingCompactionSides = new Set();
     lastOverlaySignature = "";
     return;
   }
@@ -233,10 +234,26 @@ async function toggleOverlayEnabled() {
   if (!game.user.isGM) return;
 
   const enabled = isOverlayEnabled();
-
-  if (enabled) await playOverlayExitAnimation();
   await game.settings.set(MODULE_ID, SETTING_ENABLED, !enabled);
   ui.controls?.render?.();
+}
+
+async function handleOverlayEnabledChange(enabled) {
+  if (enabled) {
+    refreshVSOverlay();
+    return;
+  }
+
+  const generation = overlayGeneration;
+  await playOverlayExitAnimation();
+
+  if (generation === overlayGeneration && !isOverlayEnabled()) {
+    removeVSOverlay();
+    previousOverlayUuids = new Set();
+    pendingNewUuids = new Set();
+    pendingCompactionSides = new Set();
+    lastOverlaySignature = "";
+  }
 }
 
 function addSceneControlButtons(controls) {
@@ -290,8 +307,17 @@ function openConfigApp() {
   configApp.render(true);
 }
 
+function isActorSheetApp(app) {
+  if (!app || app?.constructor?.name === "VSOverlayImageAdjustApp") return false;
+  if (typeof ActorSheet !== "undefined" && app instanceof ActorSheet) return true;
+
+  const appName = app.constructor?.name ?? "";
+  return /ActorSheet/i.test(appName);
+}
+
 function getActorFromSheetApp(app) {
-  if (app?.constructor?.name === "VSOverlayImageAdjustApp") return null;
+  if (!isActorSheetApp(app)) return null;
+
   const candidates = [
     app?.object,
     app?.document,
@@ -1007,26 +1033,22 @@ async function persistEntryImageFit(uuid, imageFit) {
 
   if (!actor) {
     ui.notifications?.warn(localize("imageAdjust.noPermission"));
-    return;
+    return false;
   }
 
-  if (game.user.isGM) {
+  const canSave =
+    game.user.isGM ||
+    (typeof actor.testUserPermission === "function"
+      ? actor.testUserPermission(game.user, "OWNER")
+      : actor.isOwner);
+
+  if (canSave) {
     await actor.setFlag(MODULE_ID, FLAG_IMAGE_FIT, fit);
-    return;
+    return true;
   }
 
-  if (!actor.isOwner) {
-    ui.notifications?.warn(localize("imageAdjust.noPermission"));
-    return;
-  }
-
-  game.socket?.emit(`module.${MODULE_ID}`, {
-    type: "saveImageFit",
-    userId: game.user.id,
-    uuid,
-    imageFit: fit
-  });
-  ui.notifications?.info(localize("imageAdjust.saveRequested"));
+  ui.notifications?.warn(localize("imageAdjust.noPermission"));
+  return false;
 }
 
 async function handleImageFitSaveRequest(message) {
@@ -1741,8 +1763,8 @@ class VSOverlayImageAdjustApp extends Application {
       event.preventDefault();
       event.stopPropagation();
       try {
-        await persistEntryImageFit(this.uuid, this.fit);
-        ui.notifications?.info(localize("imageAdjust.saved"));
+        const saved = await persistEntryImageFit(this.uuid, this.fit);
+        if (saved) ui.notifications?.info(localize("imageAdjust.saved"));
       } catch (error) {
         console.warn(`${MODULE_ID} | Could not save image fit`, error);
         ui.notifications?.warn(localize("imageAdjust.saveFailed"));
