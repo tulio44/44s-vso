@@ -5,7 +5,6 @@
 [![Foundry VTT](https://img.shields.io/badge/Foundry%20VTT-v11--v13-orange)](https://foundryvtt.com/)
 [![Latest Manifest](https://img.shields.io/badge/manifest-latest-blue)](https://github.com/tulio44/44s-vso/releases/latest/download/module.json)
 [![Support](https://img.shields.io/badge/support-buy%20me%20a%20coffee-yellow)](https://buymeacoffee.com/tulio44)
-![Downloads](https://img.shields.io/github/downloads/tulio44/44s-vso/total)
 
 ## Features
 
