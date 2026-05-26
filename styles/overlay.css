@@ -163,6 +163,7 @@
   filter:
     drop-shadow(1px 0 0 rgba(255, 255, 255, 0.24))
     drop-shadow(-1px 0 0 rgba(0, 0, 0, 0.82));
+  backface-visibility: hidden;
   will-change: opacity, transform, filter;
 }
 
@@ -259,6 +260,8 @@
 .vs-fighter-panel {
   --fighter-image-x: 50%;
   --fighter-image-y: 50%;
+  --fighter-image-pan-x: 0%;
+  --fighter-image-pan-y: 0%;
   --fighter-image-zoom: 1;
   --fighter-image-flip: 1;
   position: absolute;
@@ -270,6 +273,8 @@
   overflow: hidden;
   pointer-events: auto;
   clip-path: polygon(0 0, calc(100% - var(--tp-slant)) 0, 100% 100%, var(--tp-slant) 100%);
+  backface-visibility: hidden;
+  contain: paint;
 }
 
 .vs-fighter-image {
@@ -278,8 +283,9 @@
   background-position: var(--fighter-image-x) var(--fighter-image-y);
   background-repeat: no-repeat;
   background-size: cover;
-  transform: scaleX(var(--fighter-image-flip)) scale(var(--fighter-image-zoom));
+  transform: translate(var(--fighter-image-pan-x), var(--fighter-image-pan-y)) scaleX(var(--fighter-image-flip)) scale(var(--fighter-image-zoom));
   transform-origin: center;
+  backface-visibility: hidden;
   will-change: transform, filter;
 }
 
@@ -440,13 +446,13 @@
   0% {
     opacity: 0;
     transform: scale(1.012) skewX(-0.8deg);
-    filter: brightness(1.5) contrast(1.18);
+    filter: brightness(1.18);
   }
 
   44% {
     opacity: 1;
     transform: scale(1) skewX(0.35deg);
-    filter: brightness(1.28) contrast(1.12);
+    filter: brightness(1.08);
   }
 
   58% {
@@ -456,7 +462,7 @@
   100% {
     opacity: 1;
     transform: scale(1);
-    filter: brightness(1) contrast(1);
+    filter: brightness(1);
   }
 }
 
@@ -464,24 +470,24 @@
   0% {
     opacity: 0;
     transform: translateX(-150%) scaleX(0.5);
-    filter: brightness(1.8) contrast(1.2) blur(4px);
+    filter: brightness(1.16);
   }
 
   52% {
     opacity: 1;
     transform: translateX(0) scaleX(1.04);
-    filter: brightness(1.28) contrast(1.08) blur(0);
+    filter: brightness(1.08);
   }
 
   64% {
     transform: translateX(-1.6%) scaleX(0.99);
-    filter: brightness(1.04) contrast(1.02) blur(0);
+    filter: brightness(1.02);
   }
 
   100% {
     opacity: 1;
     transform: translateX(0) scaleX(1);
-    filter: brightness(1) blur(0);
+    filter: brightness(1);
   }
 }
 
@@ -489,24 +495,24 @@
   0% {
     opacity: 0;
     transform: translateX(150%) scaleX(0.5);
-    filter: brightness(1.8) contrast(1.2) blur(4px);
+    filter: brightness(1.16);
   }
 
   52% {
     opacity: 1;
     transform: translateX(0) scaleX(1.04);
-    filter: brightness(1.28) contrast(1.08) blur(0);
+    filter: brightness(1.08);
   }
 
   64% {
     transform: translateX(1.6%) scaleX(0.99);
-    filter: brightness(1.04) contrast(1.02) blur(0);
+    filter: brightness(1.02);
   }
 
   100% {
     opacity: 1;
     transform: translateX(0) scaleX(1);
-    filter: brightness(1) blur(0);
+    filter: brightness(1);
   }
 }
 
@@ -514,18 +520,18 @@
   0% {
     opacity: 0;
     transform: translateY(-48vh) rotate(-7deg) scale(1.08);
-    filter: blur(3px) brightness(1.7) contrast(1.16);
+    filter: brightness(1.14);
   }
 
   48% {
     opacity: 1;
     transform: translateY(0) rotate(-4deg) scaleX(0.86);
-    filter: blur(0) brightness(1.35) contrast(1.1);
+    filter: brightness(1.08);
   }
 
   60% {
     transform: translateY(0) rotate(-4deg) scaleX(0.9);
-    filter: blur(0) brightness(1.06) contrast(1.04);
+    filter: brightness(1.02);
   }
 
   72% {
@@ -535,7 +541,7 @@
   100% {
     opacity: 1;
     transform: translateY(0) rotate(-4deg) scaleX(0.86);
-    filter: blur(0) brightness(1);
+    filter: brightness(1);
   }
 }
 
@@ -609,17 +615,17 @@
 @keyframes vs-fighter-breath {
   0%,
   100% {
-    transform: scaleX(var(--fighter-image-flip)) translateY(0) scale(calc(var(--fighter-image-zoom) * 1), calc(var(--fighter-image-zoom) * 1));
+    transform: translate(var(--fighter-image-pan-x), var(--fighter-image-pan-y)) scaleX(var(--fighter-image-flip)) scale(calc(var(--fighter-image-zoom) * 1), calc(var(--fighter-image-zoom) * 1));
     filter: brightness(1);
   }
 
   46% {
-    transform: scaleX(var(--fighter-image-flip)) translateY(-0.25%) scale(calc(var(--fighter-image-zoom) * 1.004), calc(var(--fighter-image-zoom) * 1.007));
+    transform: translate(var(--fighter-image-pan-x), calc(var(--fighter-image-pan-y) - 0.25%)) scaleX(var(--fighter-image-flip)) scale(calc(var(--fighter-image-zoom) * 1.004), calc(var(--fighter-image-zoom) * 1.007));
     filter: brightness(1.008);
   }
 
   62% {
-    transform: scaleX(var(--fighter-image-flip)) translateY(-0.12%) scale(calc(var(--fighter-image-zoom) * 1.002), calc(var(--fighter-image-zoom) * 1.004));
+    transform: translate(var(--fighter-image-pan-x), calc(var(--fighter-image-pan-y) - 0.12%)) scaleX(var(--fighter-image-flip)) scale(calc(var(--fighter-image-zoom) * 1.002), calc(var(--fighter-image-zoom) * 1.004));
     filter: brightness(1.004);
   }
 }
@@ -897,6 +903,8 @@
   --vs-preview-height: 542px;
   --fighter-image-x: 50%;
   --fighter-image-y: 50%;
+  --fighter-image-pan-x: 0%;
+  --fighter-image-pan-y: 0%;
   --fighter-image-zoom: 1;
   --fighter-image-flip: 1;
   --tp-slant: 34px;
@@ -923,7 +931,7 @@
   background-position: var(--fighter-image-x) var(--fighter-image-y);
   background-repeat: no-repeat;
   background-size: cover;
-  transform: scaleX(var(--fighter-image-flip)) scale(var(--fighter-image-zoom));
+  transform: translate(var(--fighter-image-pan-x), var(--fighter-image-pan-y)) scaleX(var(--fighter-image-flip)) scale(var(--fighter-image-zoom));
   transform-origin: center;
   pointer-events: none;
 }

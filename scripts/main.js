@@ -1,3 +1,8 @@
+import { getImageFitCssVars, getImageFitStyle, normalizeImageFit } from "./image-fit.js";
+import { applyPanelImages } from "./overlay-assets.js";
+import { createOverlayAnimations } from "./overlay-animations.js";
+import { clampNumber } from "./utils.js";
+
 const MODULE_ID = "44s-vso";
 const OVERLAY_ID = "vs-combat-overlay-root";
 const FALLBACK_IMG = "icons/svg/mystery-man.svg";
@@ -94,7 +99,22 @@ let overlayGeneration = 0;
 let scheduledOverlayRefreshId = null;
 let scheduledOverlayRefreshOptions = {};
 let lastOverlaySignature = "";
-const preloadedImages = new Map();
+const {
+  cancelSlotAnimations,
+  playDefeatedAnimation,
+  playOverlayExitAnimation,
+  playRecoveryAnimation,
+  playSlotExitAnimation,
+  scheduleOverlayEnter,
+  triggerDefeatedChangeAnimations,
+  triggerNewEntryAnimations,
+  triggerSideCompactionAnimations
+} = createOverlayAnimations({
+  overlayId: OVERLAY_ID,
+  getOverlayGeneration: () => overlayGeneration,
+  getRenderSide,
+  escapeSelector
+});
 
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
@@ -567,101 +587,10 @@ function getCompactionSides(currentState, previousState, explicitSides, shouldAn
   return sides;
 }
 
-function triggerDefeatedChangeAnimations(root, previousState, currentState, newUuids, generation, shouldAnimate) {
-  if (shouldAnimate || !previousState.size) return;
-
-  requestAnimationFrame(() => {
-    if (generation !== overlayGeneration || !root.isConnected) return;
-
-    currentState.forEach((defeated, uuid) => {
-      if (newUuids.has(uuid) || !previousState.has(uuid) || previousState.get(uuid) === defeated) return;
-
-      if (defeated) playDefeatedAnimation(uuid);
-      else playRecoveryAnimation(uuid);
-    });
-  });
-}
-
-function triggerSideCompactionAnimations(root, compactionSides, newUuids, generation, shouldAnimate) {
-  if (shouldAnimate || !compactionSides.size) return;
-
-  root.getBoundingClientRect();
-  requestAnimationFrame(() => {
-    if (generation !== overlayGeneration || !root.isConnected) return;
-
-    compactionSides.forEach((side) => {
-      const renderSide = getRenderSide(side);
-      const slots = [...root.querySelectorAll(`.vs-fighter-slot[data-side="${renderSide}"][data-uuid]`)]
-        .filter((slot) => slot.dataset.uuid && !newUuids.has(slot.dataset.uuid));
-
-      slots.forEach((slot, index) => {
-        const fromX = renderSide === "right" ? "5%" : "-5%";
-        const cutX = renderSide === "right" ? "-1.2%" : "1.2%";
-
-        slot.animate(
-          [
-            { opacity: 0.72, transform: `translateX(${fromX})`, filter: "brightness(1.35) contrast(1.08)" },
-            { opacity: 1, transform: `translateX(${cutX})`, filter: "brightness(1.08) contrast(1.03)", offset: 0.42 },
-            { opacity: 1, transform: "translateX(0)", filter: "brightness(1) contrast(1)" }
-          ],
-          {
-            delay: Math.min(index * 14, 42),
-            duration: 170,
-            easing: "cubic-bezier(0.55, 0, 0.28, 1)",
-            fill: "both"
-          }
-        );
-      });
-    });
-  });
-}
-
 function getRenderSide(side) {
   if (side === "allies") return "left";
   if (side === "enemies") return "right";
   return side;
-}
-
-async function scheduleOverlayEnter(root, generation, shouldAnimate) {
-  if (!shouldAnimate) return;
-
-  root.getBoundingClientRect();
-  await Promise.race([
-    preloadPanelImages(root),
-    new Promise((resolve) => window.setTimeout(resolve, 120))
-  ]);
-
-  requestAnimationFrame(() => {
-    if (generation !== overlayGeneration || !root.isConnected) return;
-    root.classList.remove("is-entering");
-    root.getBoundingClientRect();
-    root.classList.add("is-entering");
-    root.classList.remove("is-enter-prep");
-  });
-}
-
-function preloadPanelImages(root) {
-  const srcs = [...root.querySelectorAll(".vs-fighter-panel[data-img]")]
-    .map((panel) => panel.dataset.img)
-    .filter(Boolean);
-
-  return Promise.allSettled(srcs.map(preloadImage));
-}
-
-function preloadImage(src) {
-  if (preloadedImages.has(src)) return preloadedImages.get(src);
-
-  const promise = new Promise((resolve) => {
-    const image = new Image();
-    image.onload = resolve;
-    image.onerror = resolve;
-    image.src = src;
-
-    if (image.decode) image.decode().then(resolve).catch(resolve);
-  });
-
-  preloadedImages.set(src, promise);
-  return promise;
 }
 
 function createFighterColumns(entries, side, context = {}) {
@@ -690,7 +619,7 @@ function getEntryImageStyle(entry, side = "left") {
   const fit = normalizeImageFit(entry?.imageFit);
   const sideFlip = side === "right" ? -1 : 1;
   const imageFlip = fit.flip ? -1 : 1;
-  return `--fighter-image-x: ${fit.x}%; --fighter-image-y: ${fit.y}%; --fighter-image-zoom: ${fit.zoom}; --fighter-image-flip: ${sideFlip * imageFlip};`;
+  return getImageFitStyle(fit, sideFlip * imageFlip);
 }
 
 function getFighterCountStyle(entries) {
@@ -1165,22 +1094,6 @@ function normalizeEntryImage(entry) {
   };
 }
 
-function normalizeImageFit(fit = {}) {
-  fit = fit ?? {};
-  return {
-    x: clampNumber(fit.x, 0, 100, 50),
-    y: clampNumber(fit.y, 0, 100, 50),
-    zoom: clampNumber(fit.zoom, 1, 3, 1),
-    flip: Boolean(fit.flip)
-  };
-}
-
-function clampNumber(value, min, max, fallback) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return fallback;
-  return Math.min(max, Math.max(min, number));
-}
-
 function getTokenImage({ combatant, token, actor, document }) {
   const tokenImage =
     token?.texture?.src ??
@@ -1283,13 +1196,6 @@ function getEntryUuidSet(entries) {
   return new Set(entries.map((entry) => entry.uuid).filter(Boolean));
 }
 
-function applyPanelImages(root) {
-  root.querySelectorAll(".vs-fighter-panel[data-img]").forEach((panel) => {
-    const image = panel.querySelector(".vs-fighter-image");
-    if (image) image.style.backgroundImage = `url("${panel.dataset.img}")`;
-  });
-}
-
 function suppressOverlayRefresh(duration = 900) {
   suppressOverlayRefreshUntil = Math.max(suppressOverlayRefreshUntil, Date.now() + duration);
 }
@@ -1301,252 +1207,6 @@ function setRenderedDefeatedState(uuid, defeated) {
   const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
   cancelSlotAnimations(slot, { keepBreath: !defeated });
   slot?.classList.toggle("is-defeated", defeated);
-}
-
-function cancelSlotAnimations(slot, { keepBreath = false } = {}) {
-  slot?.getAnimations({ subtree: true }).forEach((animation) => {
-    if (animation.playState === "finished") return;
-    if (keepBreath && animation.animationName === "vs-fighter-breath") return;
-    animation.cancel();
-  });
-}
-
-function triggerNewEntryAnimations(root, newUuids, generation = overlayGeneration) {
-  if (!newUuids.size) return;
-
-  const selectors = [...newUuids]
-    .map((uuid) => `.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`)
-    .join(",");
-
-  if (!selectors) return;
-
-  const slots = root.querySelectorAll(selectors);
-  slots.forEach((slot) => {
-    const isRight = getRenderSide(slot.dataset.side) === "right";
-    const fromX = isRight ? "108%" : "-108%";
-    const overshootX = isRight ? "-1.8%" : "1.8%";
-
-    slot.getAnimations().forEach((animation) => animation.cancel());
-    slot.classList.remove("is-new");
-    slot.classList.add("is-pending-new");
-
-    requestAnimationFrame(() => {
-      if (generation !== overlayGeneration || !slot.isConnected) return;
-
-      const movement = slot.animate(
-        [
-          { opacity: 0, transform: `translateX(${fromX}) scaleX(0.78)` },
-          { opacity: 1, transform: `translateX(${overshootX}) scaleX(1.025)`, offset: 0.72 },
-          { opacity: 1, transform: "translateX(0) scaleX(1)" }
-        ],
-        {
-          duration: 920,
-          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-          fill: "both"
-        }
-      );
-
-      slot.classList.remove("is-pending-new");
-      slot.classList.add("is-new");
-      triggerPanelFlash(slot);
-
-      movement.finished.finally(() => {
-        if (!slot.isConnected) return;
-        slot.classList.remove("is-new");
-      });
-    });
-  });
-}
-
-function triggerPanelFlash(slot) {
-  const panel = slot.querySelector(".vs-fighter-panel");
-  if (!panel) return;
-  const isRight = getRenderSide(slot.dataset.side) === "right";
-  const fromX = isRight ? "120%" : "-120%";
-  const midX = isRight ? "20%" : "-20%";
-  const toX = isRight ? "-120%" : "120%";
-
-  panel.animate(
-    [
-      { opacity: 0, transform: `translateX(${fromX})` },
-      { opacity: 0.85, transform: `translateX(${midX})`, offset: 0.35 },
-      { opacity: 0, transform: `translateX(${toX})` }
-    ],
-    {
-      duration: 620,
-      easing: "ease-out",
-      pseudoElement: "::after"
-    }
-  );
-}
-
-async function playSlotExitAnimation(uuid, side) {
-  const root = document.getElementById(OVERLAY_ID);
-  if (!root || !uuid) return;
-
-  const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
-  if (!slot) return;
-
-  const direction = side === "enemies" || slot.dataset.side === "right" ? "110%" : "-110%";
-  slot.classList.add("is-leaving");
-
-  await slot.animate(
-    [
-      { opacity: 1, transform: "translateX(0) scaleX(1)" },
-      { opacity: 1, transform: "translateX(2%) scaleX(1.04)", offset: 0.24 },
-      { opacity: 0, transform: `translateX(${direction}) scaleX(0.72)` }
-    ],
-    {
-      duration: 520,
-      easing: "cubic-bezier(0.7, 0, 0.84, 0)",
-      fill: "forwards"
-    }
-  ).finished.catch(() => {});
-}
-
-async function playDefeatedAnimation(uuid) {
-  const root = document.getElementById(OVERLAY_ID);
-  if (!root || !uuid) return;
-
-  const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
-  if (!slot) return;
-  const panel = slot.querySelector(".vs-fighter-panel");
-  if (!panel) return;
-
-  cancelSlotAnimations(slot);
-  slot.classList.add("is-being-defeated");
-
-  await Promise.allSettled([
-    slot.animate(
-      [
-        { transform: "translateX(0)" },
-        { transform: "translateX(-8px)", offset: 0.18 },
-        { transform: "translateX(7px)", offset: 0.34 },
-        { transform: "translateX(-4px)", offset: 0.5 },
-        { transform: "translateX(0)" }
-      ],
-      {
-        delay: 80,
-        duration: 520,
-        easing: "ease-out"
-      }
-    ).finished,
-    panel.animate(
-      [
-        { filter: "brightness(1) grayscale(0)" },
-        { filter: "brightness(1.22) grayscale(0.15)", offset: 0.2 },
-        { filter: "brightness(0.55) grayscale(1)" }
-      ],
-      {
-        duration: 520,
-        easing: "cubic-bezier(0.16, 1, 0.3, 1)"
-      }
-    ).finished,
-    triggerDefeatedPulse(slot)
-  ]);
-
-  slot.classList.remove("is-being-defeated");
-}
-
-async function playRecoveryAnimation(uuid) {
-  const root = document.getElementById(OVERLAY_ID);
-  if (!root || !uuid) return;
-
-  const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
-  if (!slot) return;
-  const panel = slot.querySelector(".vs-fighter-panel");
-  if (!panel) return;
-
-  cancelSlotAnimations(slot, { keepBreath: true });
-  slot.classList.add("is-recovering");
-
-  await Promise.allSettled([
-    slot.animate(
-      [
-        { transform: "translateX(0) scale(0.985)" },
-        { transform: "translateX(0) scale(1.035)", offset: 0.46 },
-        { transform: "translateX(0) scale(1)" }
-      ],
-      {
-        duration: 680,
-        easing: "cubic-bezier(0.16, 1, 0.3, 1)"
-      }
-    ).finished,
-    panel.animate(
-      [
-        { filter: "brightness(0.55) grayscale(1)" },
-        { filter: "brightness(1.28) grayscale(0.15)", offset: 0.46 },
-        { filter: "brightness(1) grayscale(0)" }
-      ],
-      {
-        duration: 680,
-        easing: "cubic-bezier(0.16, 1, 0.3, 1)"
-      }
-    ).finished,
-    triggerRecoveryPulse(slot)
-  ]);
-
-  slot.classList.remove("is-recovering");
-}
-
-function triggerRecoveryPulse(slot) {
-  const panel = slot.querySelector(".vs-fighter-panel");
-  if (!panel) return Promise.resolve();
-
-  return panel.animate(
-    [
-      { opacity: 0, transform: "translateY(18%) scaleY(0.2)" },
-      { opacity: 0.95, transform: "translateY(0) scaleY(1)", offset: 0.36 },
-      { opacity: 0, transform: "translateY(-18%) scaleY(1.15)" }
-    ],
-    {
-      duration: 640,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fill: "both",
-      pseudoElement: "::after"
-    }
-  ).finished.catch(() => {});
-}
-
-function triggerDefeatedPulse(slot) {
-  const panel = slot.querySelector(".vs-fighter-panel");
-  if (!panel) return Promise.resolve();
-
-  return panel.animate(
-    [
-      { opacity: 0, transform: "translateX(-126%) scaleX(0.75)" },
-      { opacity: 0.92, transform: "translateX(-18%) scaleX(1)", offset: 0.42 },
-      { opacity: 0, transform: "translateX(122%) scaleX(0.82)" }
-    ],
-    {
-      duration: 300,
-      easing: "cubic-bezier(0.55, 0, 0.28, 1)",
-      fill: "both",
-      pseudoElement: "::after"
-    }
-  ).finished.catch(() => {});
-}
-
-async function playOverlayExitAnimation() {
-  const root = document.getElementById(OVERLAY_ID);
-  if (!root) return;
-
-  root.getAnimations({ subtree: true }).forEach((animation) => animation.cancel());
-  root.classList.add("is-exiting");
-
-  await waitForAnimation(root, 420);
-}
-
-function waitForAnimation(element, fallbackMs) {
-  const animations = element.getAnimations({ subtree: true });
-  if (!animations.length) {
-    return new Promise((resolve) => window.setTimeout(resolve, fallbackMs));
-  }
-
-  return Promise.race([
-    Promise.allSettled(animations.map((animation) => animation.finished)),
-    new Promise((resolve) => window.setTimeout(resolve, fallbackMs))
-  ]);
 }
 
 function escapeHtml(value) {
@@ -1664,7 +1324,7 @@ class VSOverlayImageAdjustApp extends Application {
           `).join("")}
         </div>
         <div class="vs-image-adjust-preview-stage">
-          <div class="vs-image-adjust-preview" style="--vs-preview-width: ${this.previewSize.width}px; --vs-preview-height: ${this.previewSize.height}px; --fighter-image-x: ${this.fit.x}%; --fighter-image-y: ${this.fit.y}%; --fighter-image-zoom: ${this.fit.zoom}; --fighter-image-flip: ${this.fit.flip ? -1 : 1};">
+          <div class="vs-image-adjust-preview" style="--vs-preview-width: ${this.previewSize.width}px; --vs-preview-height: ${this.previewSize.height}px; ${getImageFitStyle(this.fit, this.fit.flip ? -1 : 1)};">
             <div class="vs-image-adjust-picture" style="background-image: url('${escapeAttr(img)}');"></div>
             <div class="vs-image-adjust-name">${escapeHtml(name)}</div>
           </div>
@@ -1807,10 +1467,10 @@ class VSOverlayImageAdjustApp extends Application {
     if (!preview) return;
     preview.style.setProperty("--vs-preview-width", `${this.previewSize.width}px`);
     preview.style.setProperty("--vs-preview-height", `${this.previewSize.height}px`);
-    preview.style.setProperty("--fighter-image-x", `${this.fit.x}%`);
-    preview.style.setProperty("--fighter-image-y", `${this.fit.y}%`);
-    preview.style.setProperty("--fighter-image-zoom", String(this.fit.zoom));
-    preview.style.setProperty("--fighter-image-flip", this.fit.flip ? "-1" : "1");
+    const fitVars = getImageFitCssVars(this.fit, this.fit.flip ? -1 : 1);
+    for (const [property, value] of Object.entries(fitVars)) {
+      preview.style.setProperty(property, value);
+    }
   }
 
   stepZoom(html, preview, delta) {
