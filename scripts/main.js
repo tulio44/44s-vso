@@ -8,6 +8,8 @@ const OVERLAY_ID = "vs-combat-overlay-root";
 const FALLBACK_IMG = "icons/svg/mystery-man.svg";
 const SETTING_ENABLED = "enabled";
 const SETTING_IMAGE_SOURCE = "imageSource";
+const SETTING_MUSIC_PLAYLIST = "musicPlaylist";
+const SETTING_MUSIC_SOUND = "musicSound";
 const IMAGE_SOURCE_TOKEN = "token";
 const IMAGE_SOURCE_ARTWORK = "artwork";
 const FLAG_DEFEATED = "defeated";
@@ -21,6 +23,10 @@ const LOCALIZATION_FALLBACKS = {
     "settings.imageSource.hint": "Escolhe qual imagem o 44's VSO usa para cada personagem.",
     "settings.imageSource.token": "Token",
     "settings.imageSource.artwork": "Arte do personagem",
+    "settings.musicPlaylist.name": "Playlist do 44's VSO",
+    "settings.musicPlaylist.hint": "Playlist usada quando o overlay aparece.",
+    "settings.musicSound.name": "Musica do 44's VSO",
+    "settings.musicSound.hint": "Faixa da playlist que toca junto do overlay.",
     "controls.enable": "Ativar 44's VSO",
     "controls.disable": "Desativar 44's VSO",
     "controls.config": "Configurar lados do 44's VSO",
@@ -35,6 +41,15 @@ const LOCALIZATION_FALLBACKS = {
     "config.reveal": "Revelar no overlay",
     "config.hide": "Esconder do overlay",
     "config.remove": "Remover",
+    "config.visible": "Visivel",
+    "config.hidden": "Sumiu",
+    "config.defeated": "Derrotado",
+    "config.entryCount": "{count} no lado",
+    "config.moveForward": "Mover para frente",
+    "config.moveBackward": "Mover para tras",
+    "config.music": "Musica do overlay",
+    "config.noMusic": "Sem musica",
+    "config.noSound": "Escolha uma faixa",
     "imageAdjust.title": "Ajustar imagem do 44's VSO",
     "imageAdjust.zoom": "Zoom",
     "imageAdjust.horizontal": "Horizontal",
@@ -58,6 +73,10 @@ const LOCALIZATION_FALLBACKS = {
     "settings.imageSource.hint": "Chooses which image 44's VSO uses for each character.",
     "settings.imageSource.token": "Token",
     "settings.imageSource.artwork": "Character artwork",
+    "settings.musicPlaylist.name": "44's VSO playlist",
+    "settings.musicPlaylist.hint": "Playlist used when the overlay appears.",
+    "settings.musicSound.name": "44's VSO music",
+    "settings.musicSound.hint": "Playlist sound that plays with the overlay.",
     "controls.enable": "Enable 44's VSO",
     "controls.disable": "Disable 44's VSO",
     "controls.config": "Configure 44's VSO sides",
@@ -72,6 +91,15 @@ const LOCALIZATION_FALLBACKS = {
     "config.reveal": "Show in overlay",
     "config.hide": "Hide from overlay",
     "config.remove": "Remove",
+    "config.visible": "Visible",
+    "config.hidden": "Gone",
+    "config.defeated": "Defeated",
+    "config.entryCount": "{count} on side",
+    "config.moveForward": "Move forward",
+    "config.moveBackward": "Move backward",
+    "config.music": "Overlay music",
+    "config.noMusic": "No music",
+    "config.noSound": "Choose a sound",
     "imageAdjust.title": "Adjust 44's VSO image",
     "imageAdjust.zoom": "Zoom",
     "imageAdjust.horizontal": "Horizontal",
@@ -99,6 +127,7 @@ let overlayGeneration = 0;
 let scheduledOverlayRefreshId = null;
 let scheduledOverlayRefreshOptions = {};
 let lastOverlaySignature = "";
+let overlayMusicState = null;
 const {
   cancelSlotAnimations,
   playDefeatedAnimation,
@@ -108,6 +137,7 @@ const {
   scheduleOverlayEnter,
   triggerDefeatedChangeAnimations,
   triggerNewEntryAnimations,
+  triggerRepositionAnimations,
   triggerSideCompactionAnimations
 } = createOverlayAnimations({
   overlayId: OVERLAY_ID,
@@ -148,6 +178,32 @@ Hooks.once("init", () => {
       configApp?.render(false);
     }
   });
+
+  game.settings.register(MODULE_ID, SETTING_MUSIC_PLAYLIST, {
+    name: localize("settings.musicPlaylist.name"),
+    hint: localize("settings.musicPlaylist.hint"),
+    scope: "world",
+    config: false,
+    type: String,
+    default: "",
+    onChange: () => {
+      configApp?.render(false);
+      if (document.getElementById(OVERLAY_ID)) restartOverlayMusic();
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTING_MUSIC_SOUND, {
+    name: localize("settings.musicSound.name"),
+    hint: localize("settings.musicSound.hint"),
+    scope: "world",
+    config: false,
+    type: String,
+    default: "",
+    onChange: () => {
+      configApp?.render(false);
+      if (document.getElementById(OVERLAY_ID)) restartOverlayMusic();
+    }
+  });
 });
 
 Hooks.once("ready", () => {
@@ -157,7 +213,7 @@ Hooks.once("ready", () => {
 
 Hooks.on("combatStart", refreshVSOverlay);
 Hooks.on("deleteCombat", () => {
-  removeVSOverlay();
+  removeVSOverlay({ stopMusic: true });
   previousOverlayUuids = new Set();
   pendingNewUuids = new Set();
   pendingCompactionSides = new Set();
@@ -193,7 +249,7 @@ function refreshVSOverlay(options = {}) {
   const sides = options?.sides ? normalizeSides(options.sides) : getCombatSides(combat);
 
   if (!isOverlayEnabled() || !shouldRenderOverlay(combat, sides)) {
-    removeVSOverlay();
+    removeVSOverlay({ stopMusic: true });
     previousOverlayUuids = new Set();
     pendingNewUuids = new Set();
     pendingCompactionSides = new Set();
@@ -219,7 +275,7 @@ function refreshVSOverlay(options = {}) {
     lastOverlaySignature = signature;
   } catch (error) {
     console.error(`${MODULE_ID} | Failed to render VS overlay`, error);
-    removeVSOverlay();
+    removeVSOverlay({ stopMusic: true });
   }
   configApp?.render(false);
 }
@@ -268,7 +324,7 @@ async function handleOverlayEnabledChange(enabled) {
   await playOverlayExitAnimation();
 
   if (generation === overlayGeneration && !isOverlayEnabled()) {
-    removeVSOverlay();
+    removeVSOverlay({ stopMusic: true });
     previousOverlayUuids = new Set();
     pendingNewUuids = new Set();
     pendingCompactionSides = new Set();
@@ -457,6 +513,7 @@ function renderVSOverlay(combat, sides = getCombatSides(combat)) {
   const shouldAnimate = !existingRoot;
   const previousVisibleState = captureVisibleOverlayState(existingRoot);
   const previousDefeatedState = captureDefeatedOverlayState(existingRoot);
+  const previousLayout = captureOverlayLayout(existingRoot);
   removeVSOverlay();
   overlayGeneration += 1;
   const generation = overlayGeneration;
@@ -498,8 +555,10 @@ function renderVSOverlay(combat, sides = getCombatSides(combat)) {
   applyPanelImages(root);
   host.insertBefore(root, host.firstElementChild);
   bindOverlayPanelClicks(root);
+  if (shouldAnimate) startOverlayMusic();
   scheduleOverlayEnter(root, generation, shouldAnimate);
   triggerSideCompactionAnimations(root, compactionSides, newUuids, generation, shouldAnimate);
+  triggerRepositionAnimations(root, previousLayout, newUuids, compactionSides, generation, shouldAnimate);
   triggerNewEntryAnimations(root, newUuids, generation);
   triggerDefeatedChangeAnimations(root, previousDefeatedState, currentDefeatedState, newUuids, generation, shouldAnimate);
   previousOverlayUuids = getEntryUuidSet([...allies, ...enemies]);
@@ -531,6 +590,24 @@ function captureDefeatedOverlayState(root) {
   });
 
   return state;
+}
+
+function captureOverlayLayout(root) {
+  const layout = new Map();
+  if (!root) return layout;
+
+  root.querySelectorAll(".vs-fighter-slot[data-uuid]").forEach((slot) => {
+    const uuid = slot.dataset.uuid;
+    if (!uuid) return;
+    const rect = slot.getBoundingClientRect();
+    layout.set(uuid, {
+      side: slot.dataset.side,
+      left: rect.left,
+      top: rect.top
+    });
+  });
+
+  return layout;
 }
 
 function createDefeatedState(entries) {
@@ -894,6 +971,8 @@ async function removeEntryFromSide(side, uuid) {
 }
 
 async function moveAssignedEntry(sourceSide, targetSide, uuid, beforeUuid = null) {
+  if (sourceSide === targetSide && uuid === beforeUuid) return;
+
   const sides = getCombatSides();
   const sourceEntries = sides[sourceSide];
   const targetEntries = sides[targetSide];
@@ -917,6 +996,35 @@ async function moveAssignedEntry(sourceSide, targetSide, uuid, beforeUuid = null
   sides[sourceSide] = sourceEntries;
   sides[targetSide] = cleanTargetEntries;
   await setCombatSides(sides);
+}
+
+async function moveAssignedEntryByOffset(side, uuid, offset) {
+  const sides = getCombatSides();
+  const entries = sides[side];
+  if (!Array.isArray(entries)) return false;
+
+  const index = entries.findIndex((entry) => entry.uuid === uuid);
+  const targetIndex = index + offset;
+  if (index < 0 || targetIndex < 0 || targetIndex >= entries.length) return false;
+
+  const [entry] = entries.splice(index, 1);
+  entries.splice(targetIndex, 0, entry);
+  await setCombatSides(sides);
+  return true;
+}
+
+function getConfigDisplayEntries(side, entries) {
+  return side === "allies" ? [...entries].reverse() : entries;
+}
+
+function getConfigMoveOffset(side, direction) {
+  const forwardOffset = side === "allies" ? 1 : -1;
+  return direction === "forward" ? forwardOffset : -forwardOffset;
+}
+
+function canMoveEntryByOffset(entries, index, offset) {
+  const targetIndex = index + offset;
+  return index >= 0 && targetIndex >= 0 && targetIndex < entries.length;
 }
 
 function setAssignedEntryDefeated(side, uuid, defeated) {
@@ -1182,14 +1290,88 @@ function isOverlayRefreshSuppressed() {
   return Date.now() < suppressOverlayRefreshUntil;
 }
 
-function removeVSOverlay() {
+function removeVSOverlay({ stopMusic = false } = {}) {
   overlayGeneration += 1;
   lastOverlaySignature = "";
+  if (stopMusic) stopOverlayMusic();
   const root = document.getElementById(OVERLAY_ID);
   if (!root) return;
 
   root.getAnimations({ subtree: true }).forEach((animation) => animation.cancel());
   root.remove();
+}
+
+async function restartOverlayMusic() {
+  await stopOverlayMusic();
+  startOverlayMusic();
+}
+
+async function startOverlayMusic() {
+  if (!game.user?.isGM) return;
+
+  const { playlist, sound } = getConfiguredOverlayMusic();
+  if (!playlist || !sound) return;
+
+  const wasPlaying = Boolean(sound.playing);
+  overlayMusicState = {
+    playlistId: playlist.id,
+    soundId: sound.id,
+    startedByOverlay: !wasPlaying
+  };
+
+  if (wasPlaying) return;
+
+  try {
+    if (typeof playlist.playSound === "function") await playlist.playSound(sound);
+    else if (typeof sound.play === "function") await sound.play();
+    else if (typeof sound.update === "function") await sound.update({ playing: true });
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Could not start overlay music`, error);
+    overlayMusicState = null;
+  }
+}
+
+async function stopOverlayMusic() {
+  if (!game.user?.isGM || !overlayMusicState) return;
+
+  const state = overlayMusicState;
+  overlayMusicState = null;
+  if (!state.startedByOverlay) return;
+
+  const playlist = game.playlists?.get(state.playlistId);
+  const sound = getCollectionDocument(playlist?.sounds, state.soundId);
+  if (!playlist || !sound) return;
+
+  try {
+    if (typeof playlist.stopSound === "function") await playlist.stopSound(sound);
+    else if (typeof sound.stop === "function") await sound.stop();
+    else if (typeof sound.update === "function") await sound.update({ playing: false });
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Could not stop overlay music`, error);
+  }
+}
+
+function getConfiguredOverlayMusic() {
+  const playlistId = game.settings.get(MODULE_ID, SETTING_MUSIC_PLAYLIST);
+  const soundId = game.settings.get(MODULE_ID, SETTING_MUSIC_SOUND);
+  const playlist = playlistId ? game.playlists?.get(playlistId) : null;
+  const sound = playlist && soundId
+    ? getCollectionDocument(playlist.sounds, soundId)
+    : null;
+
+  return { playlist, sound };
+}
+
+function getCollectionDocument(collection, id) {
+  return collection?.get?.(id) ?? getCollectionValues(collection).find((entry) => entry?.id === id) ?? null;
+}
+
+function getCollectionValues(collection) {
+  if (!collection) return [];
+  if (Array.isArray(collection)) return collection;
+  if (Array.isArray(collection.contents)) return collection.contents;
+  if (typeof collection.values === "function") return [...collection.values()];
+  return [...collection].map((entry) => Array.isArray(entry) ? entry[1] : entry);
 }
 
 function getEntryUuidSet(entries) {
@@ -1528,6 +1710,7 @@ class VSOverlayConfigApp extends Application {
 
     return $($.parseHTML(`
       <form class="vs-config-form">
+        ${this.createMusicMarkup()}
         <div class="vs-config-sides">
           ${this.createSideMarkup("allies", localize("config.allies"), sides.allies)}
           ${this.createSideMarkup("enemies", localize("config.enemies"), sides.enemies)}
@@ -1537,27 +1720,90 @@ class VSOverlayConfigApp extends Application {
   }
 
   createSideMarkup(side, label, entries) {
-    const rows = entries.map(normalizeEntryImage).map((entry) => `
+    const normalizedEntries = entries.map(normalizeEntryImage);
+    const displayEntries = getConfigDisplayEntries(side, normalizedEntries);
+    const rows = displayEntries.map((entry) => {
+      const visibleLabel = entry.hidden ? localize("config.hidden") : localize("config.visible");
+      const defeatedLabel = localize("config.defeated");
+      const index = normalizedEntries.findIndex((candidate) => candidate.uuid === entry.uuid);
+      const canMoveForward = canMoveEntryByOffset(normalizedEntries, index, getConfigMoveOffset(side, "forward"));
+      const canMoveBackward = canMoveEntryByOffset(normalizedEntries, index, getConfigMoveOffset(side, "backward"));
+
+      return `
       <li class="vs-config-entry ${entry.defeated ? "is-defeated" : ""} ${entry.hidden ? "is-hidden" : ""}" data-side="${side}" data-uuid="${escapeAttr(entry.uuid)}" draggable="true" title="${localize("config.openSheet")}">
-        <img src="${escapeAttr(entry.img || FALLBACK_IMG)}" alt="" />
-        <span data-hidden-label="${escapeAttr(localize("config.hiddenSuffix"))}">${escapeHtml(entry.name || localize("common.unknown"))}</span>
-        <button type="button" data-action="defeated" title="${localize("config.toggleDefeated")}"><i class="fas fa-skull"></i></button>
-        <button type="button" data-action="hidden" title="${entry.hidden ? localize("config.reveal") : localize("config.hide")}"><i class="fas ${entry.hidden ? "fa-eye" : "fa-eye-slash"}"></i></button>
-        <button type="button" data-action="remove" title="${localize("config.remove")}"><i class="fas fa-trash"></i></button>
+        <div class="vs-config-order-actions">
+          <button type="button" class="vs-config-order-button" data-action="move-forward" title="${localize("config.moveForward")}" ${canMoveForward ? "" : "disabled"}><i class="fas fa-chevron-up"></i></button>
+          <button type="button" class="vs-config-order-button" data-action="move-backward" title="${localize("config.moveBackward")}" ${canMoveBackward ? "" : "disabled"}><i class="fas fa-chevron-down"></i></button>
+        </div>
+        <div class="vs-config-portrait">
+          <img src="${escapeAttr(entry.img || FALLBACK_IMG)}" alt="" />
+        </div>
+        <div class="vs-config-entry-main">
+          <span class="vs-config-entry-name">${escapeHtml(entry.name || localize("common.unknown"))}</span>
+          <div class="vs-config-entry-status">
+            <span class="vs-config-status vs-config-status-hidden">${escapeHtml(visibleLabel)}</span>
+            <span class="vs-config-status vs-config-status-defeated">${escapeHtml(defeatedLabel)}</span>
+          </div>
+        </div>
+        <div class="vs-config-entry-actions">
+          <button type="button" class="vs-config-icon-button ${entry.defeated ? "active" : ""}" data-action="defeated" title="${localize("config.toggleDefeated")}" aria-pressed="${entry.defeated ? "true" : "false"}"><i class="fas fa-skull"></i></button>
+          <button type="button" class="vs-config-icon-button ${entry.hidden ? "active" : ""}" data-action="hidden" title="${entry.hidden ? localize("config.reveal") : localize("config.hide")}" aria-pressed="${entry.hidden ? "true" : "false"}"><i class="fas ${entry.hidden ? "fa-eye" : "fa-eye-slash"}"></i></button>
+          <button type="button" class="vs-config-icon-button vs-config-remove-button" data-action="remove" title="${localize("config.remove")}"><i class="fas fa-trash"></i></button>
+        </div>
       </li>
-    `).join("");
+    `;
+    }).join("");
 
     return `
       <section class="vs-config-side" data-side="${side}">
-        <h3>${label}</h3>
-        <div class="vs-config-drop">${localize("config.dropHint")}</div>
+        <div class="vs-config-side-header">
+          <h3>${label}</h3>
+          <span>${localize("config.entryCount").replace("{count}", String(entries.length))}</span>
+        </div>
+        <div class="vs-config-drop"><i class="fas fa-plus"></i><span>${localize("config.dropHint")}</span></div>
         <ol class="vs-config-list">${rows}</ol>
+      </section>
+    `;
+  }
+
+  createMusicMarkup() {
+    const selectedPlaylistId = game.settings.get(MODULE_ID, SETTING_MUSIC_PLAYLIST);
+    const selectedSoundId = game.settings.get(MODULE_ID, SETTING_MUSIC_SOUND);
+    const playlists = getCollectionValues(game.playlists);
+    const selectedPlaylist = getCollectionDocument(game.playlists, selectedPlaylistId);
+    const sounds = selectedPlaylist ? getCollectionValues(selectedPlaylist.sounds) : [];
+
+    return `
+      <section class="vs-config-music">
+        <div class="vs-config-side-header">
+          <h3>${localize("config.music")}</h3>
+        </div>
+        <div class="vs-config-music-fields">
+          <select name="musicPlaylist">
+            <option value="">${localize("config.noMusic")}</option>
+            ${playlists.map((playlist) => `<option value="${escapeAttr(playlist.id)}" ${playlist.id === selectedPlaylistId ? "selected" : ""}>${escapeHtml(playlist.name)}</option>`).join("")}
+          </select>
+          <select name="musicSound" ${selectedPlaylist ? "" : "disabled"}>
+            <option value="">${localize("config.noSound")}</option>
+            ${sounds.map((sound) => `<option value="${escapeAttr(sound.id)}" ${sound.id === selectedSoundId ? "selected" : ""}>${escapeHtml(sound.name)}</option>`).join("")}
+          </select>
+        </div>
       </section>
     `;
   }
 
   activateListeners(html) {
     super.activateListeners(html);
+
+    html.find("select[name='musicPlaylist']").on("change", async (event) => {
+      await game.settings.set(MODULE_ID, SETTING_MUSIC_PLAYLIST, event.currentTarget.value);
+      await game.settings.set(MODULE_ID, SETTING_MUSIC_SOUND, "");
+      this.render(false);
+    });
+
+    html.find("select[name='musicSound']").on("change", async (event) => {
+      await game.settings.set(MODULE_ID, SETTING_MUSIC_SOUND, event.currentTarget.value);
+    });
 
     html.find(".vs-config-entry").on("click", (event) => {
       if (event.target.closest("button")) return;
@@ -1646,9 +1892,21 @@ class VSOverlayConfigApp extends Application {
       this.render(false);
     });
 
+    html.find("button[data-action='move-forward'], button[data-action='move-backward']").on("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const row = event.currentTarget.closest(".vs-config-entry");
+      const direction = event.currentTarget.dataset.action === "move-forward" ? "forward" : "backward";
+      const offset = getConfigMoveOffset(row.dataset.side, direction);
+      const moved = await moveAssignedEntryByOffset(row.dataset.side, row.dataset.uuid, offset);
+      if (moved) this.render(false);
+    });
+
     html.find("button[data-action='defeated']").on("click", async (event) => {
       const row = event.currentTarget.closest(".vs-config-entry");
       const defeated = row.classList.toggle("is-defeated");
+      event.currentTarget.classList.toggle("active", defeated);
+      event.currentTarget.setAttribute("aria-pressed", String(defeated));
       setAssignedEntryDefeated(row.dataset.side, row.dataset.uuid, defeated);
     });
 
@@ -1658,7 +1916,10 @@ class VSOverlayConfigApp extends Application {
       const icon = event.currentTarget.querySelector("i");
       icon?.classList.toggle("fa-eye", hidden);
       icon?.classList.toggle("fa-eye-slash", !hidden);
+      event.currentTarget.classList.toggle("active", hidden);
+      event.currentTarget.setAttribute("aria-pressed", String(hidden));
       event.currentTarget.title = hidden ? localize("config.reveal") : localize("config.hide");
+      row.querySelector(".vs-config-status-hidden").textContent = hidden ? localize("config.hidden") : localize("config.visible");
       setAssignedEntryHidden(row.dataset.side, row.dataset.uuid, hidden);
     });
   }

@@ -58,6 +58,55 @@ export function createOverlayAnimations({ overlayId, getOverlayGeneration, getRe
     });
   }
 
+  function triggerRepositionAnimations(root, previousLayout, newUuids, compactionSides, generation, shouldAnimate) {
+    if (shouldAnimate || !previousLayout?.size) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    const compactingSides = new Set([...compactionSides].map(getRenderSide));
+
+    root.getBoundingClientRect();
+    requestAnimationFrame(() => {
+      if (generation !== getOverlayGeneration() || !root.isConnected) return;
+      const newEntrySides = new Set([...newUuids].map((uuid) => {
+        const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
+        return slot ? getRenderSide(slot.dataset.side) : null;
+      }).filter(Boolean));
+
+      root.querySelectorAll(".vs-fighter-slot[data-uuid]").forEach((slot) => {
+        const uuid = slot.dataset.uuid;
+        if (!uuid || newUuids.has(uuid)) return;
+
+        const previous = previousLayout.get(uuid);
+        if (!previous) return;
+        const currentSide = getRenderSide(slot.dataset.side);
+        const previousSide = getRenderSide(previous.side);
+        if (currentSide !== previousSide || compactingSides.has(currentSide) || newEntrySides.has(currentSide)) return;
+
+        const current = slot.getBoundingClientRect();
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+
+        const distance = Math.hypot(deltaX, deltaY);
+
+        slot.classList.add("is-repositioning");
+        slot.animate(
+          [
+            { transform: `translate(${deltaX}px, ${deltaY}px)` },
+            { transform: "translate(0, 0)" }
+          ],
+          {
+            duration: Math.min(340, Math.max(220, distance * 0.72)),
+            easing: "cubic-bezier(0.2, 0, 0, 1)",
+            fill: "both"
+          }
+        ).finished.finally(() => {
+          if (!slot.isConnected) return;
+          slot.classList.remove("is-repositioning");
+        });
+      });
+    });
+  }
+
   async function scheduleOverlayEnter(root, generation, shouldAnimate) {
     if (!shouldAnimate) return;
 
@@ -315,6 +364,7 @@ export function createOverlayAnimations({ overlayId, getOverlayGeneration, getRe
     scheduleOverlayEnter,
     triggerDefeatedChangeAnimations,
     triggerNewEntryAnimations,
+    triggerRepositionAnimations,
     triggerSideCompactionAnimations
   };
 }

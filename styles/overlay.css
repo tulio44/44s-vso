@@ -760,7 +760,7 @@
 }
 
 .vs-combat-config .window-content {
-  padding: 10px;
+  padding: 12px;
 }
 
 .vs-config-form {
@@ -770,14 +770,36 @@
 .vs-config-sides {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
+}
+
+.vs-config-music {
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.vs-config-music-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.vs-config-music-fields select {
+  width: 100%;
+  min-width: 0;
 }
 
 .vs-config-side {
   min-height: 260px;
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(0, 0, 0, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(0, 0, 0, 0.16);
+  border-radius: 6px;
 }
 
 .vs-config-side.is-dragging {
@@ -785,22 +807,45 @@
   outline-offset: -2px;
 }
 
-.vs-config-side h3 {
-  margin: 0 0 8px;
+.vs-config-side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vs-config-side-header h3 {
+  margin: 0;
   font-size: 14px;
   line-height: 1;
 }
 
+.vs-config-side-header span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  line-height: 1;
+}
+
 .vs-config-drop {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 54px;
-  place-items: center;
   margin-bottom: 8px;
   padding: 8px;
   border: 1px dashed rgba(255, 255, 255, 0.36);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.18);
   color: rgba(255, 255, 255, 0.66);
   font-size: 12px;
   text-align: center;
+}
+
+.vs-config-drop i {
+  color: #67e8f9;
+  font-size: 11px;
 }
 
 .vs-config-list {
@@ -813,13 +858,21 @@
 
 .vs-config-entry {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 28px 28px 28px;
+  grid-template-columns: 22px 42px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  padding: 5px;
-  background: rgba(255, 255, 255, 0.08);
+  gap: 8px;
+  min-height: 52px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.075);
   border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
   cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, opacity 140ms ease, filter 140ms ease;
+}
+
+.vs-config-entry:hover {
+  border-color: rgba(103, 232, 249, 0.52);
+  background: rgba(255, 255, 255, 0.105);
 }
 
 .vs-config-entry.is-dragging {
@@ -832,35 +885,130 @@
 }
 
 .vs-config-entry.is-defeated {
-  filter: grayscale(1);
+  filter: grayscale(0.85);
 }
 
 .vs-config-entry.is-hidden {
-  opacity: 0.58;
+  opacity: 0.68;
 }
 
-.vs-config-entry.is-hidden span::after {
-  content: attr(data-hidden-label);
-  opacity: 0.72;
+.vs-config-order-actions {
+  display: grid;
+  gap: 3px;
+  width: 22px;
 }
 
-.vs-config-entry img {
-  width: 38px;
-  height: 38px;
+.vs-config-order-button {
+  display: grid;
+  width: 22px;
+  height: 20px;
+  min-height: 0;
+  place-items: center;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.vs-config-order-button i {
+  font-size: 10px;
+}
+
+.vs-config-order-button:disabled {
+  cursor: default;
+  opacity: 0.28;
+}
+
+.vs-config-portrait {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.vs-config-portrait img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
-.vs-config-entry span {
+.vs-config-entry-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.vs-config-entry-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 700;
 }
 
-.vs-config-entry button {
+.vs-config-entry-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 16px;
+}
+
+.vs-config-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.vs-config-status-defeated {
+  display: none;
+}
+
+.vs-config-entry.is-hidden .vs-config-status-hidden {
+  border-color: rgba(103, 232, 249, 0.32);
+  color: #baf4ff;
+}
+
+.vs-config-entry.is-defeated .vs-config-status-defeated {
+  display: inline-flex;
+  border-color: rgba(255, 87, 82, 0.4);
+  color: #ffc4c1;
+}
+
+.vs-config-entry-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 28px);
+  gap: 5px;
+}
+
+.vs-config-entry button,
+.vs-config-icon-button {
   width: 28px;
-  cursor: pointer;
   height: 28px;
   padding: 0;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.vs-config-icon-button.active {
+  border-color: rgba(103, 232, 249, 0.76);
+  box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.28);
+  color: #111;
+}
+
+.vs-config-entry.is-defeated button[data-action="defeated"] {
+  border-color: rgba(255, 87, 82, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(255, 87, 82, 0.3);
+}
+
+.vs-config-remove-button:hover {
+  border-color: rgba(255, 87, 82, 0.82);
 }
 
 .vs-image-adjust .window-content {
