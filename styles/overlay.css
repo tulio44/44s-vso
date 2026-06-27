@@ -209,12 +209,28 @@
   animation-delay: 128ms;
 }
 
+#vs-combat-overlay-root.is-intro-mode .vs-fighter-slot {
+  opacity: 0;
+}
+
+#vs-combat-overlay-root.is-intro-mode.is-entering .vs-fighter-slot {
+  animation: none;
+}
+
 #vs-combat-overlay-root.is-entering .vs-text {
   animation: vs-drop-impact 380ms cubic-bezier(0.2, 0, 0, 1) 70ms both;
 }
 
+#vs-combat-overlay-root.is-intro-mode.is-entering .vs-text {
+  animation-delay: calc(var(--vs-intro-enter-total-ms, 720ms) - 280ms);
+}
+
 #vs-combat-overlay-root.is-entering .vs-impact-burst {
   animation: vs-impact-burst 300ms ease-out 205ms both;
+}
+
+#vs-combat-overlay-root.is-intro-mode.is-entering .vs-impact-burst {
+  animation-delay: var(--vs-intro-enter-total-ms, 720ms);
 }
 
 .vs-fighter-slot.is-pending-new[data-side="left"] {
@@ -344,13 +360,13 @@
 
 .vs-fighter-name {
   position: absolute;
-  left: var(--tp-slant);
+  left: 0;
   right: 0;
   bottom: clamp(8px, 1.4vh, 18px);
   z-index: 4;
   box-sizing: border-box;
   min-width: 0;
-  padding: 7px 10px;
+  padding: 7px 10px 7px calc(10px + var(--tp-slant));
   overflow: hidden;
   background: rgba(0, 0, 0, 0.74);
   border: 1px solid rgba(255, 255, 255, 0.22);
@@ -371,7 +387,21 @@
 
 .vs-fighter-wall-right .vs-fighter-name {
   left: 0;
-  right: var(--tp-slant);
+  right: 0;
+  padding-right: calc(10px + var(--tp-slant));
+  padding-left: 10px;
+}
+
+#vs-combat-overlay-root.has-names-top .vs-fighter-name {
+  top: clamp(8px, 1.4vh, 18px);
+  bottom: auto;
+  padding-right: calc(10px + var(--tp-slant));
+  padding-left: 10px;
+}
+
+#vs-combat-overlay-root.has-names-top .vs-fighter-wall-right .vs-fighter-name {
+  padding-right: 10px;
+  padding-left: calc(10px + var(--tp-slant));
 }
 
 .vs-fighter-slot.is-defeated .vs-fighter-panel {
@@ -426,6 +456,725 @@
     linear-gradient(180deg, transparent 0, rgba(120, 245, 255, 0.12) 24%, rgba(150, 245, 255, 0.42) 50%, rgba(120, 245, 255, 0.14) 76%, transparent 100%),
     radial-gradient(circle at 50% 52%, rgba(120, 245, 255, 0.32), transparent 36%);
   mix-blend-mode: screen;
+}
+
+.vs-fighter-slot.is-final-blow-source {
+  opacity: 0;
+}
+
+.vs-final-blow-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.vs-final-blow-scene.is-running {
+  opacity: 1;
+}
+
+.vs-final-blow-shutter,
+.vs-final-blow-speedlines,
+.vs-final-blow-impact-frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.vs-final-blow-shutter {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.96), transparent 24%, transparent 76%, rgba(0, 0, 0, 0.96)),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), transparent 34%),
+    rgba(0, 0, 0, 0.26);
+  opacity: 0;
+}
+
+.vs-final-blow-scene.is-running .vs-final-blow-shutter {
+  animation: vs-final-shutter-in 280ms ease-out both;
+}
+
+.vs-final-blow-speedlines {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 18px, rgba(255, 255, 255, 0.16) 18px 20px, transparent 20px 42px),
+    linear-gradient(90deg, rgba(82, 225, 255, 0.18), transparent 34%, transparent 66%, rgba(255, 87, 82, 0.18));
+  opacity: 0;
+  mix-blend-mode: screen;
+  transform: skewX(-18deg) scaleX(1.12);
+}
+
+.vs-final-blow-scene.is-impact .vs-final-blow-speedlines {
+  animation: vs-final-speedlines 420ms ease-out both;
+}
+
+.vs-final-blow-impact-frame {
+  background:
+    radial-gradient(circle at 50% 50%, #fff 0 10%, #050505 10% 18%, #fff 18% 24%, transparent 24%),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+
+.vs-final-blow-scene.is-impact .vs-final-blow-impact-frame {
+  animation: vs-final-impact-frame 310ms steps(2, end) both;
+}
+
+.vs-final-blow-fighter {
+  --tp-slant: clamp(28px, 4vw, 70px);
+  position: absolute;
+  top: 50%;
+  width: clamp(210px, 27vw, 420px);
+  height: clamp(360px, 66vh, 720px);
+  filter:
+    drop-shadow(2px 0 0 rgba(255, 255, 255, 0.28))
+    drop-shadow(-2px 6px 18px rgba(0, 0, 0, 0.92));
+  opacity: 0;
+  will-change: opacity, transform, filter;
+}
+
+.vs-final-blow-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.vs-final-blow-card .vs-fighter-panel {
+  inset: 0;
+}
+
+.vs-final-blow-card .vs-fighter-name {
+  font-size: clamp(14px, 1.4vw, 22px);
+}
+
+.vs-final-blow-fighter[data-side="right"] .vs-fighter-panel {
+  clip-path: polygon(var(--tp-slant) 0, 100% 0, calc(100% - var(--tp-slant)) 100%, 0 100%);
+}
+
+.vs-final-blow-fighter[data-side="right"] .vs-fighter-name {
+  left: 0;
+  right: 0;
+  padding-right: calc(10px + var(--tp-slant));
+  padding-left: 10px;
+}
+
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-loser {
+  left: clamp(32px, 8vw, 128px);
+  transform: translate(-130%, -50%) scale(0.92);
+}
+
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-attacker {
+  right: clamp(32px, 8vw, 128px);
+  transform: translate(130%, -50%) scale(0.92);
+}
+
+.vs-final-blow-scene.is-running.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-running.is-attacker-right .vs-final-blow-loser {
+  animation: vs-final-focus-left 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-scene.is-running.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-running.is-attacker-right .vs-final-blow-attacker {
+  animation: vs-final-focus-right 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-scene.is-impact.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-impact.is-attacker-right .vs-final-blow-attacker {
+  animation-name: vs-final-focus-left, vs-final-lunge-right;
+  animation-duration: 420ms, 260ms;
+  animation-delay: 0ms, 0ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.55, 0, 0.28, 1);
+  animation-fill-mode: both, both;
+}
+
+.vs-final-blow-scene.is-impact.is-attacker-right .vs-final-blow-attacker {
+  animation-name: vs-final-focus-right, vs-final-lunge-left;
+}
+
+.vs-final-blow-scene.is-impact .vs-final-blow-loser {
+  animation-duration: 420ms, 520ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.55, 0, 0.28, 1);
+  animation-fill-mode: both, both;
+}
+
+.vs-final-blow-scene.is-impact.is-attacker-left .vs-final-blow-loser {
+  animation-name: vs-final-focus-right, vs-final-hit-right;
+}
+
+.vs-final-blow-scene.is-impact.is-attacker-right .vs-final-blow-loser {
+  animation-name: vs-final-focus-left, vs-final-hit-left;
+}
+
+.vs-final-blow-cracks {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  opacity: 0;
+  background:
+    linear-gradient(38deg, transparent 0 45%, rgba(255, 255, 255, 0.95) 45% 46%, transparent 46% 100%),
+    linear-gradient(128deg, transparent 0 49%, rgba(255, 255, 255, 0.86) 49% 50%, transparent 50% 100%),
+    linear-gradient(74deg, transparent 0 56%, rgba(255, 255, 255, 0.72) 56% 57%, transparent 57% 100%),
+    radial-gradient(circle at 48% 46%, transparent 0 12%, rgba(255, 255, 255, 0.65) 12% 13%, transparent 13%);
+  mix-blend-mode: screen;
+  clip-path: polygon(48% 46%, 54% 43%, 62% 34%, 58% 48%, 74% 55%, 56% 56%, 52% 82%, 47% 58%, 28% 70%, 42% 52%, 22% 38%, 44% 44%);
+}
+
+.vs-final-blow-scene.is-cracking .vs-final-blow-loser .vs-fighter-panel {
+  animation: vs-final-loser-crack 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-scene.is-cracking .vs-final-blow-cracks {
+  animation: vs-final-cracks 760ms steps(3, end) both;
+}
+
+.vs-final-blow-scene.is-returning {
+  animation: vs-final-return 520ms cubic-bezier(0.72, 0, 0.84, 0) both;
+}
+
+.vs-final-blow-scene {
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.vs-final-blow-scene.is-entering {
+  opacity: 1;
+}
+
+.vs-final-blow-shutter {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.98) 0 14%, transparent 28% 72%, rgba(0, 0, 0, 0.98) 86% 100%),
+    rgba(0, 0, 0, 0.34);
+}
+
+.vs-final-blow-scene.is-entering .vs-final-blow-shutter {
+  animation: vs-final-cut-in 240ms ease-out both;
+}
+
+.vs-final-blow-fighter {
+  width: clamp(250px, 30vw, 460px);
+  height: clamp(390px, 68vh, 700px);
+  top: 50%;
+  opacity: 0;
+  transition:
+    opacity 180ms ease,
+    transform 360ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 180ms ease;
+}
+
+.vs-final-blow-card .vs-fighter-panel {
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.86),
+    0 0 42px rgba(0, 0, 0, 0.76);
+}
+
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-attacker,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-loser {
+  animation: none;
+}
+
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-loser {
+  left: clamp(32px, 7vw, 112px);
+  right: auto;
+  transform: translate(-118%, -50%) scale(0.96);
+}
+
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-attacker {
+  right: clamp(32px, 7vw, 112px);
+  left: auto;
+  transform: translate(118%, -50%) scale(0.96);
+}
+
+.vs-final-blow-scene.is-entering.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-entering.is-attacker-right .vs-final-blow-loser {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
+}
+
+.vs-final-blow-scene.is-entering.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-entering.is-attacker-right .vs-final-blow-attacker {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
+}
+
+.vs-final-blow-scene.is-locked .vs-final-blow-attacker {
+  filter: brightness(1.12) contrast(1.06);
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-left .vs-final-blow-attacker {
+  transform: translate(31vw, -50%) scale(1.06) skewX(-4deg);
+  transition-duration: 150ms;
+  filter: brightness(1.55) contrast(1.22);
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-right .vs-final-blow-attacker {
+  transform: translate(-31vw, -50%) scale(1.06) skewX(4deg);
+  transition-duration: 150ms;
+  filter: brightness(1.55) contrast(1.22);
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-left .vs-final-blow-loser {
+  transform: translate(-5vw, -50%) rotate(0.5deg) scale(1.01);
+  transition-duration: 170ms;
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-right .vs-final-blow-loser {
+  transform: translate(5vw, -50%) rotate(-0.5deg) scale(1.01);
+  transition-duration: 170ms;
+}
+
+.vs-final-blow-speedlines {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, 0.28) 22px 24px, transparent 24px 50px),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: skewX(-14deg) translateX(-18%);
+}
+
+.vs-final-blow-scene.is-striking .vs-final-blow-speedlines {
+  animation: vs-final-clean-lines 280ms ease-out both;
+}
+
+.vs-final-blow-impact-frame {
+  background: #fff;
+  mix-blend-mode: normal;
+}
+
+.vs-final-blow-scene.is-impact-one .vs-final-blow-impact-frame {
+  animation: vs-final-white-frame 86ms steps(1, end) both;
+}
+
+.vs-final-blow-scene.is-impact-two .vs-final-blow-impact-frame {
+  animation: vs-final-black-frame 96ms steps(1, end) both;
+}
+
+.vs-final-blow-scene.is-impact-two .vs-final-blow-loser {
+  filter: brightness(0.72) grayscale(0.45) contrast(1.18);
+}
+
+.vs-final-blow-cracks {
+  background:
+    linear-gradient(35deg, transparent 0 47%, rgba(255, 255, 255, 0.95) 47% 48%, transparent 48% 100%),
+    linear-gradient(118deg, transparent 0 51%, rgba(255, 255, 255, 0.88) 51% 52%, transparent 52% 100%),
+    linear-gradient(78deg, transparent 0 58%, rgba(255, 255, 255, 0.78) 58% 59%, transparent 59% 100%),
+    linear-gradient(152deg, transparent 0 42%, rgba(255, 255, 255, 0.68) 42% 43%, transparent 43% 100%);
+  clip-path: none;
+}
+
+.vs-final-blow-scene.is-cracking .vs-final-blow-loser .vs-fighter-panel {
+  animation: vs-final-clean-crack-panel 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-scene.is-cracking .vs-final-blow-cracks {
+  animation: vs-final-clean-cracks 620ms steps(3, end) both;
+}
+
+.vs-final-blow-scene.is-returning {
+  animation: vs-final-clean-return 380ms cubic-bezier(0.72, 0, 0.84, 0) both;
+}
+
+.vs-final-blow-scene {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.94) 0 13%, rgba(0, 0, 0, 0.38) 31% 69%, rgba(0, 0, 0, 0.94) 87% 100%);
+}
+
+.vs-final-blow-scene.is-entering {
+  opacity: 1;
+}
+
+.vs-final-blow-fighter {
+  --final-focus-width: clamp(250px, 30vw, 470px);
+  --final-focus-height: clamp(390px, 68vh, 720px);
+  left: var(--final-start-left);
+  top: var(--final-start-top);
+  width: var(--final-start-width);
+  height: var(--final-start-height);
+  opacity: 1;
+  transform: translate(0, 0) scale(1);
+  transition:
+    left 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    right 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    top 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    height 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms ease,
+    transform 180ms cubic-bezier(0.55, 0, 0.28, 1),
+    filter 120ms ease;
+}
+
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-attacker,
+.vs-final-blow-scene.is-attacker-right .vs-final-blow-loser {
+  right: auto;
+  animation: none;
+}
+
+.vs-final-blow-scene.is-entering.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-entering.is-attacker-right .vs-final-blow-loser {
+  left: clamp(34px, 6vw, 112px);
+  top: 50%;
+  width: var(--final-focus-width);
+  height: var(--final-focus-height);
+  transform: translate(0, -50%) scale(1);
+}
+
+.vs-final-blow-scene.is-entering.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-entering.is-attacker-right .vs-final-blow-attacker {
+  left: calc(100% - clamp(34px, 6vw, 112px) - var(--final-focus-width));
+  top: 50%;
+  width: var(--final-focus-width);
+  height: var(--final-focus-height);
+  transform: translate(0, -50%) scale(1);
+}
+
+.vs-final-blow-scene.is-locked .vs-final-blow-attacker,
+.vs-final-blow-scene.is-locked .vs-final-blow-loser {
+  filter: brightness(1.08) contrast(1.08);
+}
+
+.vs-final-blow-scene.is-countering.is-attacker-left .vs-final-blow-loser {
+  transform: translate(-17vw, -50%) scale(1.035) skewX(3deg);
+  filter: brightness(1.3) contrast(1.12);
+}
+
+.vs-final-blow-scene.is-countering.is-attacker-right .vs-final-blow-loser {
+  transform: translate(17vw, -50%) scale(1.035) skewX(-3deg);
+  filter: brightness(1.3) contrast(1.12);
+}
+
+.vs-final-blow-scene.is-countering.is-attacker-left .vs-final-blow-attacker {
+  transform: translate(3vw, -50%) scale(1.01);
+}
+
+.vs-final-blow-scene.is-countering.is-attacker-right .vs-final-blow-attacker {
+  transform: translate(-3vw, -50%) scale(1.01);
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-left .vs-final-blow-attacker {
+  transform: translate(36vw, -50%) scale(1.08) skewX(-5deg);
+  filter: brightness(1.78) contrast(1.28) saturate(1.18);
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-right .vs-final-blow-attacker {
+  transform: translate(-36vw, -50%) scale(1.08) skewX(5deg);
+  filter: brightness(1.78) contrast(1.28) saturate(1.18);
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-left .vs-final-blow-loser {
+  transform: translate(-12vw, -50%) scale(0.99) rotate(0.7deg);
+}
+
+.vs-final-blow-scene.is-striking.is-attacker-right .vs-final-blow-loser {
+  transform: translate(12vw, -50%) scale(0.99) rotate(-0.7deg);
+}
+
+.vs-final-blow-wind,
+.vs-final-blow-glass,
+.vs-final-blow-aura,
+.vs-final-blow-slash,
+.vs-final-blow-spark {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vs-final-blow-aura {
+  background:
+    radial-gradient(ellipse at 25% 50%, rgba(103, 232, 249, 0.34), transparent 32%),
+    radial-gradient(ellipse at 75% 50%, rgba(255, 87, 82, 0.32), transparent 32%),
+    linear-gradient(90deg, transparent 0 17%, rgba(255, 255, 255, 0.12) 45% 55%, transparent 83% 100%);
+  mix-blend-mode: screen;
+  filter: blur(4px) saturate(1.24);
+}
+
+.vs-final-blow-slash {
+  top: 50%;
+  left: -18%;
+  right: -18%;
+  bottom: auto;
+  height: clamp(86px, 15vh, 170px);
+  background:
+    linear-gradient(90deg, transparent 0 11%, rgba(103, 232, 249, 0.22) 20%, rgba(255, 255, 255, 0.98) 45% 55%, rgba(255, 87, 82, 0.35) 76%, transparent 90% 100%),
+    linear-gradient(180deg, transparent 0 34%, rgba(255, 255, 255, 0.96) 48% 53%, transparent 68% 100%);
+  box-shadow:
+    0 0 24px rgba(255, 255, 255, 0.78),
+    0 0 68px rgba(103, 232, 249, 0.34);
+  clip-path: polygon(0 44%, 44% 0, 100% 30%, 56% 100%);
+  mix-blend-mode: screen;
+  transform-origin: 50% 50%;
+}
+
+.vs-final-blow-spark {
+  top: 50%;
+  left: 50%;
+  width: clamp(220px, 30vw, 520px);
+  height: clamp(220px, 30vw, 520px);
+  inset: auto;
+  margin-left: calc(clamp(220px, 30vw, 520px) / -2);
+  margin-top: calc(clamp(220px, 30vw, 520px) / -2);
+  background:
+    conic-gradient(from 8deg, transparent 0 5%, rgba(255, 255, 255, 0.96) 5% 7%, transparent 7% 13%, rgba(255, 87, 82, 0.72) 13% 15%, transparent 15% 25%, rgba(103, 232, 249, 0.8) 25% 27%, transparent 27% 40%, rgba(255, 255, 255, 0.92) 40% 42%, transparent 42% 58%, rgba(255, 255, 255, 0.95) 58% 60%, transparent 60% 75%, rgba(255, 87, 82, 0.6) 75% 77%, transparent 77% 100%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.98) 0 5%, rgba(255, 87, 82, 0.72) 6% 10%, transparent 11% 100%);
+  clip-path: polygon(50% 0, 56% 38%, 100% 50%, 57% 59%, 50% 100%, 42% 60%, 0 50%, 42% 41%);
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.7));
+}
+
+.vs-final-blow-wind {
+  background:
+    radial-gradient(ellipse at 50% 50%, transparent 0 12%, rgba(255, 255, 255, 0.9) 13%, transparent 14% 100%),
+    radial-gradient(ellipse at 50% 50%, transparent 0 22%, rgba(120, 245, 255, 0.42) 23%, transparent 25% 100%),
+    repeating-radial-gradient(ellipse at 50% 50%, transparent 0 34px, rgba(255, 255, 255, 0.22) 35px 37px, transparent 38px 72px);
+  mix-blend-mode: screen;
+  transform: scale(0.22);
+}
+
+.vs-final-blow-scene.is-impact-one .vs-final-blow-wind,
+.vs-final-blow-scene.is-impact-two .vs-final-blow-wind,
+.vs-final-blow-scene.is-final-impact .vs-final-blow-wind {
+  animation: vs-final-wind-burst 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-speedlines {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 14px, rgba(255, 255, 255, 0.42) 14px 16px, transparent 16px 38px),
+    linear-gradient(90deg, transparent 0 15%, rgba(255, 255, 255, 0.34) 50%, transparent 85%);
+  mix-blend-mode: screen;
+}
+
+.vs-final-blow-scene.is-countering .vs-final-blow-speedlines,
+.vs-final-blow-scene.is-striking .vs-final-blow-speedlines {
+  animation: vs-final-cross-wind 260ms ease-out both;
+}
+
+.vs-final-blow-impact-frame {
+  z-index: 6;
+  mix-blend-mode: normal;
+  backdrop-filter: none;
+  overflow: hidden;
+}
+
+.vs-final-blow-scene.is-impact-frame .vs-final-blow-impact-frame {
+  opacity: 1 !important;
+}
+
+.vs-final-blow-fighter {
+  z-index: 10;
+}
+
+.vs-final-blow-impact-frame::before,
+.vs-final-blow-impact-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.vs-final-blow-impact-frame::before {
+  opacity: 0.78;
+}
+
+.vs-final-blow-impact-frame::after {
+  opacity: 0.92;
+}
+
+.vs-final-blow-impact-frame.is-impact-white {
+  background: #f6f2ea;
+}
+
+.vs-final-blow-impact-frame.is-impact-white::before {
+  background:
+    repeating-linear-gradient(104deg, transparent 0 9px, rgba(0, 0, 0, 0.18) 9px 11px, transparent 11px 18px),
+    repeating-linear-gradient(8deg, transparent 0 18px, rgba(0, 0, 0, 0.08) 18px 20px, transparent 20px 32px);
+}
+
+.vs-final-blow-impact-frame.is-impact-white::after {
+  background:
+    linear-gradient(168deg, transparent 0 39%, rgba(0, 0, 0, 0.9) 39.2% 40%, transparent 40.3% 100%),
+    linear-gradient(168deg, transparent 0 52%, rgba(0, 0, 0, 0.82) 52.2% 52.9%, transparent 53.2% 100%);
+}
+
+.vs-final-blow-impact-frame.is-impact-black {
+  background: #030303;
+}
+
+.vs-final-blow-impact-frame.is-impact-black::before {
+  background:
+    repeating-linear-gradient(100deg, transparent 0 8px, rgba(255, 255, 255, 0.2) 8px 10px, transparent 10px 15px),
+    repeating-linear-gradient(3deg, transparent 0 11px, rgba(255, 255, 255, 0.12) 11px 13px, transparent 13px 19px);
+}
+
+.vs-final-blow-impact-frame.is-impact-black::after {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent 28%),
+    repeating-linear-gradient(176deg, transparent 0 13px, rgba(255, 255, 255, 0.42) 13px 15px, transparent 15px 26px);
+  transform: skewX(-8deg) translateX(-10%);
+}
+
+.vs-final-blow-impact-frame.is-impact-cut {
+  background: #f9f7f0;
+}
+
+.vs-final-blow-impact-frame.is-impact-cut::before {
+  background:
+    repeating-linear-gradient(104deg, transparent 0 7px, rgba(0, 0, 0, 0.24) 7px 9px, transparent 9px 14px),
+    radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.16), transparent 34%);
+}
+
+.vs-final-blow-impact-frame.is-impact-cut::after {
+  background:
+    linear-gradient(166deg, transparent 0 41%, #050505 41.3% 43.2%, transparent 43.5% 100%),
+    linear-gradient(166deg, transparent 0 51%, #050505 51.3% 53%, transparent 53.3% 100%);
+}
+
+.vs-final-blow-fighter.is-impact-sketch .vs-fighter-panel::before {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  z-index: 3;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(104deg, transparent 0 7px, var(--final-impact-ink, rgba(0, 0, 0, 0.38)) 7px 9px, transparent 9px 15px),
+    repeating-linear-gradient(14deg, transparent 0 18px, var(--final-impact-soft-ink, rgba(0, 0, 0, 0.12)) 18px 20px, transparent 20px 30px);
+  mix-blend-mode: var(--final-impact-blend, multiply);
+  opacity: 0.95;
+}
+
+.vs-final-blow-fighter.is-impact-sketch .vs-fighter-image,
+.vs-final-blow-fighter.is-impact-sketch .vs-fighter-shade {
+  filter: grayscale(1) contrast(4.2) brightness(1.45);
+}
+
+.vs-final-blow-fighter.is-impact-sketch .vs-fighter-name {
+  opacity: 0;
+}
+
+.vs-final-blow-fighter.is-impact-black {
+  --final-impact-ink: rgba(255, 255, 255, 0.34);
+  --final-impact-soft-ink: rgba(255, 255, 255, 0.16);
+  --final-impact-blend: screen;
+}
+
+.vs-final-blow-fighter.is-impact-black .vs-fighter-image,
+.vs-final-blow-fighter.is-impact-black .vs-fighter-shade {
+  filter: invert(1) grayscale(1) contrast(5) brightness(0.42);
+}
+
+.vs-final-blow-scene.is-impact-one .vs-final-blow-impact-frame {
+  animation: vs-final-impact-white 78ms steps(1, end) both;
+}
+
+.vs-final-blow-scene.is-impact-two .vs-final-blow-impact-frame {
+  animation: vs-final-impact-black 96ms steps(1, end) both;
+}
+
+.vs-final-blow-scene.is-final-impact .vs-final-blow-impact-frame {
+  animation: vs-final-impact-red 130ms steps(1, end) both;
+}
+
+.vs-final-blow-scene.is-final-impact .vs-final-blow-loser {
+  filter: brightness(0.56) grayscale(0.7) contrast(1.36);
+}
+
+.vs-final-blow-glass {
+  mix-blend-mode: screen;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: none;
+  filter: drop-shadow(0 0 18px rgba(155, 235, 255, 0.42));
+  transform: scale(0.72) rotate(-1deg);
+}
+
+.vs-final-blow-scene.is-cracking .vs-final-blow-glass {
+  animation: vs-final-glass-field 740ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-cracks {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: none;
+  clip-path: none;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 12px rgba(180, 240, 255, 0.5));
+}
+
+.vs-final-blow-scene.is-cracking .vs-final-blow-loser .vs-fighter-panel {
+  animation: vs-final-glass-panel 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-scene.is-cracking .vs-final-blow-cracks {
+  animation: vs-final-glass-cracks 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.vs-final-blow-glass-img {
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  display: block;
+  object-fit: cover;
+  pointer-events: none;
+  transform: scale(0.92);
+}
+
+.vs-final-blow-cracks .vs-final-blow-glass-img {
+  object-fit: cover;
+  opacity: 1;
+  transform: scale(1.9) rotate(4deg);
+}
+
+.vs-final-blow-scene.is-returning .vs-final-blow-attacker,
+.vs-final-blow-scene.is-returning .vs-final-blow-loser {
+  left: var(--final-start-left);
+  top: var(--final-start-top);
+  width: var(--final-start-width);
+  height: var(--final-start-height);
+  transform: translate(0, 0) scale(1);
+  opacity: 0;
+  transition:
+    left 420ms cubic-bezier(0.72, 0, 0.84, 0),
+    top 420ms cubic-bezier(0.72, 0, 0.84, 0),
+    width 420ms cubic-bezier(0.72, 0, 0.84, 0),
+    height 420ms cubic-bezier(0.72, 0, 0.84, 0),
+    opacity 360ms ease 80ms,
+    transform 420ms cubic-bezier(0.72, 0, 0.84, 0);
+}
+
+.vs-final-blow-scene.is-waapi .vs-final-blow-fighter,
+.vs-final-blow-scene.is-waapi.is-attacker-left .vs-final-blow-attacker,
+.vs-final-blow-scene.is-waapi.is-attacker-left .vs-final-blow-loser,
+.vs-final-blow-scene.is-waapi.is-attacker-right .vs-final-blow-attacker,
+.vs-final-blow-scene.is-waapi.is-attacker-right .vs-final-blow-loser {
+  right: auto;
+  transform: translate(0, 0) scale(1);
+  transition: none;
+  animation: none;
+}
+
+.vs-final-blow-scene.is-waapi .vs-final-blow-fighter {
+  left: var(--final-start-left);
+  top: var(--final-start-top);
+  width: var(--final-start-width);
+  height: var(--final-start-height);
+  opacity: 1;
+}
+
+.vs-final-blow-scene.is-waapi .vs-final-blow-impact-frame,
+.vs-final-blow-scene.is-waapi .vs-final-blow-wind,
+.vs-final-blow-scene.is-waapi .vs-final-blow-glass,
+.vs-final-blow-scene.is-waapi .vs-final-blow-aura,
+.vs-final-blow-scene.is-waapi .vs-final-blow-slash,
+.vs-final-blow-scene.is-waapi .vs-final-blow-spark,
+.vs-final-blow-scene.is-waapi .vs-final-blow-speedlines {
+  animation: none;
 }
 
 @keyframes vs-vignette-snap {
@@ -732,6 +1481,429 @@
   }
 }
 
+@keyframes vs-final-shutter-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes vs-final-focus-left {
+  0% {
+    opacity: 0;
+    transform: translate(-130%, -50%) scale(0.92);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
+@keyframes vs-final-focus-right {
+  0% {
+    opacity: 0;
+    transform: translate(130%, -50%) scale(0.92);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
+@keyframes vs-final-lunge-right {
+  0% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+    filter: brightness(1);
+  }
+
+  46% {
+    transform: translate(22vw, -50%) scale(1.08) skewX(-3deg);
+    filter: brightness(1.45) contrast(1.18);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(7vw, -50%) scale(1.02);
+    filter: brightness(1.05);
+  }
+}
+
+@keyframes vs-final-lunge-left {
+  0% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+    filter: brightness(1);
+  }
+
+  46% {
+    transform: translate(-22vw, -50%) scale(1.08) skewX(3deg);
+    filter: brightness(1.45) contrast(1.18);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-7vw, -50%) scale(1.02);
+    filter: brightness(1.05);
+  }
+}
+
+@keyframes vs-final-hit-right {
+  0% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+    filter: brightness(1);
+  }
+
+  22% {
+    transform: translate(-5vw, -50%) scale(1.035);
+    filter: brightness(1.65) contrast(1.24);
+  }
+
+  52% {
+    transform: translate(2vw, -50%) rotate(0.8deg) scale(0.985);
+    filter: brightness(0.95) contrast(1.08);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+    filter: brightness(0.9);
+  }
+}
+
+@keyframes vs-final-hit-left {
+  0% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+    filter: brightness(1);
+  }
+
+  22% {
+    transform: translate(5vw, -50%) scale(1.035);
+    filter: brightness(1.65) contrast(1.24);
+  }
+
+  52% {
+    transform: translate(-2vw, -50%) rotate(-0.8deg) scale(0.985);
+    filter: brightness(0.95) contrast(1.08);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+    filter: brightness(0.9);
+  }
+}
+
+@keyframes vs-final-impact-frame {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  20%,
+  42% {
+    opacity: 1;
+  }
+
+  62% {
+    opacity: 0.72;
+    filter: invert(1);
+  }
+}
+
+@keyframes vs-final-speedlines {
+  0% {
+    opacity: 0;
+    transform: translateX(-10%) skewX(-18deg) scaleX(1.12);
+  }
+
+  36% {
+    opacity: 0.85;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(14%) skewX(-18deg) scaleX(1.12);
+  }
+}
+
+@keyframes vs-final-loser-crack {
+  0% {
+    filter: brightness(1) grayscale(0);
+  }
+
+  36% {
+    filter: brightness(1.42) grayscale(0.2) contrast(1.28);
+  }
+
+  100% {
+    filter: brightness(0.56) grayscale(1) contrast(1.18);
+  }
+}
+
+@keyframes vs-final-cracks {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+
+  42% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+
+  100% {
+    opacity: 0.92;
+    transform: scale(1);
+  }
+}
+
+@keyframes vs-final-return {
+  0% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+
+  100% {
+    opacity: 0;
+    filter: brightness(1.4) blur(2px);
+  }
+}
+
+@keyframes vs-final-cut-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes vs-final-clean-lines {
+  0% {
+    opacity: 0;
+    transform: skewX(-14deg) translateX(-18%);
+  }
+
+  34% {
+    opacity: 0.95;
+  }
+
+  100% {
+    opacity: 0;
+    transform: skewX(-14deg) translateX(20%);
+  }
+}
+
+@keyframes vs-final-white-frame {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  28%,
+  66% {
+    opacity: 1;
+  }
+}
+
+@keyframes vs-final-black-frame {
+  0%,
+  100% {
+    opacity: 0;
+    background: #050505;
+  }
+
+  22%,
+  72% {
+    opacity: 1;
+    background: #050505;
+  }
+}
+
+@keyframes vs-final-clean-crack-panel {
+  0% {
+    filter: brightness(1) grayscale(0) contrast(1);
+  }
+
+  26% {
+    filter: brightness(1.42) grayscale(0.2) contrast(1.32);
+  }
+
+  100% {
+    filter: brightness(0.54) grayscale(1) contrast(1.18);
+  }
+}
+
+@keyframes vs-final-clean-cracks {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+
+  100% {
+    opacity: 0.96;
+    transform: scale(1);
+  }
+}
+
+@keyframes vs-final-clean-return {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.012);
+    filter: brightness(1.35);
+  }
+}
+
+@keyframes vs-final-wind-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.18);
+    filter: blur(0);
+  }
+
+  18% {
+    opacity: 0.95;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+    filter: blur(2px);
+  }
+}
+
+@keyframes vs-final-cross-wind {
+  0% {
+    opacity: 0;
+    transform: translateX(-22%) skewX(-16deg) scaleX(1.18);
+  }
+
+  36% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(24%) skewX(-16deg) scaleX(1.18);
+  }
+}
+
+@keyframes vs-final-impact-white {
+  0%,
+  100% {
+    opacity: 0;
+    background:
+      radial-gradient(circle at 50% 50%, #050505 0 7%, #fff 7% 16%, #050505 16% 23%, transparent 23%),
+      #fff;
+    filter: contrast(2.4) saturate(0) invert(0);
+  }
+
+  24%,
+  68% {
+    opacity: 1;
+  }
+}
+
+@keyframes vs-final-impact-black {
+  0%,
+  100% {
+    opacity: 0;
+    background:
+      radial-gradient(circle at 50% 50%, #fff 0 8%, #050505 8% 18%, #fff 18% 26%, transparent 26%),
+      #050505;
+    filter: contrast(2.8) saturate(0) invert(1);
+  }
+
+  18%,
+  76% {
+    opacity: 1;
+  }
+}
+
+@keyframes vs-final-impact-red {
+  0%,
+  100% {
+    opacity: 0;
+    background:
+      radial-gradient(circle at 50% 50%, #fff 0 5%, #ff5752 5% 12%, #050505 12% 20%, transparent 20%),
+      linear-gradient(90deg, #050505, #fff, #050505);
+    filter: contrast(3) saturate(1.8) hue-rotate(-14deg);
+  }
+
+  16%,
+  68% {
+    opacity: 0.96;
+  }
+}
+
+@keyframes vs-final-glass-field {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(0deg);
+  }
+
+  38% {
+    opacity: 0.98;
+    transform: scale(1.04) rotate(1deg);
+  }
+
+  100% {
+    opacity: 0.7;
+    transform: scale(1.18) rotate(-1deg);
+  }
+}
+
+@keyframes vs-final-glass-panel {
+  0% {
+    filter: brightness(1) grayscale(0) contrast(1);
+  }
+
+  18% {
+    filter: brightness(1.62) grayscale(0.3) contrast(1.52);
+  }
+
+  100% {
+    filter: brightness(0.48) grayscale(1) contrast(1.34);
+  }
+}
+
+@keyframes vs-final-glass-cracks {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  28% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+
+  100% {
+    opacity: 0.95;
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #vs-combat-overlay-root.is-entering .vs-overlay-vignette,
   #vs-combat-overlay-root.is-entering .vs-overlay-frame,
@@ -773,7 +1945,8 @@
   gap: 12px;
 }
 
-.vs-config-music {
+.vs-config-music,
+.vs-config-final-blow {
   margin-bottom: 12px;
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -781,15 +1954,31 @@
   background: rgba(0, 0, 0, 0.14);
 }
 
-.vs-config-music-fields {
+.vs-config-music-fields,
+.vs-config-final-blow-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
 
-.vs-config-music-fields select {
+.vs-config-final-blow-fields {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) max-content;
+}
+
+.vs-config-music-fields select,
+.vs-config-final-blow-fields select {
   width: 100%;
   min-width: 0;
+}
+
+.vs-config-final-blow-fields button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 96px;
+  height: 28px;
+  white-space: nowrap;
 }
 
 .vs-config-side {
@@ -936,7 +2125,7 @@
 
 .vs-config-entry-main {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -1086,11 +2275,11 @@
 
 .vs-image-adjust-name {
   position: absolute;
-  left: var(--tp-slant);
+  left: 0;
   right: 0;
   bottom: 0;
   z-index: 1;
-  padding: 6px 8px;
+  padding: 6px 8px 6px calc(8px + var(--tp-slant));
   overflow: hidden;
   background: rgba(0, 0, 0, 0.74);
   color: #f7fbff;
@@ -1104,12 +2293,27 @@
   pointer-events: none;
 }
 
+.vs-image-adjust-preview.is-name-hidden .vs-image-adjust-name {
+  display: none;
+}
+
+.vs-image-adjust-text {
+  display: grid;
+  gap: 4px;
+}
+
+.vs-image-adjust-text input {
+  width: 100%;
+  min-width: 0;
+}
+
 .vs-image-adjust-zoom,
 .vs-image-adjust-range {
   display: grid;
   gap: 4px;
 }
 
+.vs-image-adjust-name-toggle,
 .vs-image-adjust-flip {
   display: inline-flex;
   align-items: center;
@@ -1119,8 +2323,14 @@
   min-height: 28px;
 }
 
+.vs-image-adjust-name-toggle i,
 .vs-image-adjust-flip i {
   font-size: 13px;
+}
+
+.vs-image-adjust-name-toggle.active {
+  border-color: rgba(103, 232, 249, 0.88);
+  box-shadow: 0 0 0 1px rgba(103, 232, 249, 0.32), inset 0 0 18px rgba(103, 232, 249, 0.12);
 }
 
 .vs-image-adjust-flip.active {

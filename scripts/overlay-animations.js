@@ -123,7 +123,9 @@ export function createOverlayAnimations({ overlayId, getOverlayGeneration, getRe
       root.classList.add("is-entering");
       root.classList.remove("is-enter-prep");
 
-      waitForAnimation(root, 580).finally(() => {
+      const introTotalMs = Number.parseFloat(root.style.getPropertyValue("--vs-intro-enter-total-ms")) || 2200;
+      const fallbackMs = root.classList.contains("is-intro-mode") ? introTotalMs + 720 : 580;
+      waitForAnimation(root, fallbackMs).finally(() => {
         if (generation === getOverlayGeneration() && root.isConnected) root.classList.remove("is-entering");
       });
     });
@@ -140,39 +142,61 @@ export function createOverlayAnimations({ overlayId, getOverlayGeneration, getRe
 
     const slots = root.querySelectorAll(selectors);
     slots.forEach((slot) => {
-      const isRight = getRenderSide(slot.dataset.side) === "right";
-      const fromX = isRight ? "108%" : "-108%";
-      const overshootX = isRight ? "-1.8%" : "1.8%";
+      requestAnimationFrame(() => animateSlotEntry(slot, generation));
+    });
+  }
 
-      slot.getAnimations().forEach((animation) => animation.cancel());
-      slot.classList.remove("is-new");
-      slot.classList.add("is-pending-new");
+  function triggerIntroEntryAnimations(root, introDelays, generation = getOverlayGeneration()) {
+    if (!introDelays?.size) return;
 
-      requestAnimationFrame(() => {
-        if (generation !== getOverlayGeneration() || !slot.isConnected) return;
+    const start = () => {
+      if (generation !== getOverlayGeneration() || !root.isConnected) return;
+      if (root.classList.contains("is-enter-prep")) {
+        requestAnimationFrame(start);
+        return;
+      }
 
-        const movement = slot.animate(
-          [
-            { opacity: 0, transform: `translateX(${fromX}) scaleX(0.78)` },
-            { opacity: 1, transform: `translateX(${overshootX}) scaleX(1.025)`, offset: 0.72 },
-            { opacity: 1, transform: "translateX(0) scaleX(1)" }
-          ],
-          {
-            duration: 720,
-            easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-            fill: "both"
-          }
-        );
-
-        slot.classList.remove("is-pending-new");
-        slot.classList.add("is-new");
-        triggerPanelFlash(slot);
-
-        movement.finished.finally(() => {
-          if (!slot.isConnected) return;
-          slot.classList.remove("is-new");
-        });
+      introDelays.forEach((delay, uuid) => {
+        const slot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(uuid)}"]`);
+        if (!slot) return;
+        window.setTimeout(() => animateSlotEntry(slot, generation), delay);
       });
+    };
+
+    requestAnimationFrame(start);
+  }
+
+  function animateSlotEntry(slot, generation) {
+    if (generation !== getOverlayGeneration() || !slot.isConnected) return;
+
+    const isRight = getRenderSide(slot.dataset.side) === "right";
+    const fromX = isRight ? "108%" : "-108%";
+    const overshootX = isRight ? "-1.8%" : "1.8%";
+
+    slot.getAnimations().forEach((animation) => animation.cancel());
+    slot.classList.remove("is-new");
+    slot.classList.add("is-pending-new");
+
+    const movement = slot.animate(
+      [
+        { opacity: 0, transform: `translateX(${fromX}) scaleX(0.78)` },
+        { opacity: 1, transform: `translateX(${overshootX}) scaleX(1.025)`, offset: 0.72 },
+        { opacity: 1, transform: "translateX(0) scaleX(1)" }
+      ],
+      {
+        duration: 720,
+        easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+        fill: "both"
+      }
+    );
+
+    slot.classList.remove("is-pending-new");
+    slot.classList.add("is-new");
+    triggerPanelFlash(slot);
+
+    movement.finished.finally(() => {
+      if (!slot.isConnected) return;
+      slot.classList.remove("is-new");
     });
   }
 
@@ -363,6 +387,7 @@ export function createOverlayAnimations({ overlayId, getOverlayGeneration, getRe
     playSlotExitAnimation,
     scheduleOverlayEnter,
     triggerDefeatedChangeAnimations,
+    triggerIntroEntryAnimations,
     triggerNewEntryAnimations,
     triggerRepositionAnimations,
     triggerSideCompactionAnimations
