@@ -44,10 +44,6 @@
   "44s-vso.config.music": "Musica do overlay",
   "44s-vso.config.noMusic": "Sem musica",
   "44s-vso.config.noSound": "Escolha uma faixa",
-  "44s-vso.config.finalBlow": "Golpe final",
-  "44s-vso.config.finalBlowAttacker": "Vencedor",
-  "44s-vso.config.finalBlowLoser": "Perdedor",
-  "44s-vso.config.finalBlowPlay": "Tocar cena",
   "44s-vso.config.names": "Nomes",
   "44s-vso.config.namePosition": "Posicao dos nomes",
   "44s-vso.config.namePositionBottom": "Embaixo",
@@ -72,7 +68,5 @@
   "44s-vso.imageAdjust.saveFailed": "Nao consegui salvar o ajuste da imagem.",
   "44s-vso.config.dropHint": "Arraste fichas, tokens ou combatentes aqui",
   "44s-vso.config.hiddenSuffix": " (oculto)",
-  "44s-vso.notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o 44's VSO.",
-  "44s-vso.notifications.finalBlowNeedsOverlay": "O overlay precisa estar visivel para tocar o golpe final.",
-  "44s-vso.notifications.finalBlowNeedsTargets": "Escolha dois personagens diferentes para o golpe final."
+  "44s-vso.notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o 44's VSO."
 }

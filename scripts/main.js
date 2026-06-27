@@ -75,10 +75,6 @@ const LOCALIZATION_FALLBACKS = {
     "config.music": "Musica do overlay",
     "config.noMusic": "Sem musica",
     "config.noSound": "Escolha uma faixa",
-    "config.finalBlow": "Golpe final",
-    "config.finalBlowAttacker": "Vencedor",
-    "config.finalBlowLoser": "Perdedor",
-    "config.finalBlowPlay": "Tocar cena",
     "config.names": "Nomes",
     "config.namePosition": "Posicao dos nomes",
     "config.namePositionBottom": "Embaixo",
@@ -103,9 +99,7 @@ const LOCALIZATION_FALLBACKS = {
     "imageAdjust.saveFailed": "Nao consegui salvar o ajuste da imagem.",
     "config.dropHint": "Arraste fichas, tokens ou combatentes aqui",
     "config.hiddenSuffix": " (oculto)",
-    "notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o 44's VSO.",
-    "notifications.finalBlowNeedsOverlay": "O overlay precisa estar visivel para tocar o golpe final.",
-    "notifications.finalBlowNeedsTargets": "Escolha dois personagens diferentes para o golpe final."
+    "notifications.dropReadFailed": "Nao consegui ler esse item arrastado para o 44's VSO."
   },
   en: {
     "settings.enabled.name": "44's VSO enabled",
@@ -153,10 +147,6 @@ const LOCALIZATION_FALLBACKS = {
     "config.music": "Overlay music",
     "config.noMusic": "No music",
     "config.noSound": "Choose a sound",
-    "config.finalBlow": "Final blow",
-    "config.finalBlowAttacker": "Winner",
-    "config.finalBlowLoser": "Loser",
-    "config.finalBlowPlay": "Play scene",
     "config.names": "Names",
     "config.namePosition": "Name position",
     "config.namePositionBottom": "Bottom",
@@ -181,9 +171,7 @@ const LOCALIZATION_FALLBACKS = {
     "imageAdjust.saveFailed": "I could not save the image adjustment.",
     "config.dropHint": "Drag actors, tokens, or combatants here",
     "config.hiddenSuffix": " (hidden)",
-    "notifications.dropReadFailed": "I could not read that dropped item for 44's VSO.",
-    "notifications.finalBlowNeedsOverlay": "The overlay must be visible to play the final blow.",
-    "notifications.finalBlowNeedsTargets": "Choose two different characters for the final blow."
+    "notifications.dropReadFailed": "I could not read that dropped item for 44's VSO."
   }
 };
 
@@ -200,7 +188,6 @@ let scheduledOverlayRefreshOptions = {};
 let lastOverlaySignature = "";
 let tidy5eHeaderControlsRegistered = false;
 let overlayMusicState = null;
-let finalBlowAudioContext = null;
 const {
   cancelSlotAnimations,
   playDefeatedAnimation,
@@ -465,7 +452,6 @@ function scheduleIntroOverlayExit(generation, introStepCount) {
     scheduledIntroExitId = null;
     if (generation !== overlayGeneration || !document.getElementById(OVERLAY_ID)) return;
 
-    playOverlayExitSound();
     await playOverlayExitAnimation();
     if (generation !== overlayGeneration) return;
 
@@ -505,7 +491,6 @@ async function handleOverlayEnabledChange(enabled) {
   }
 
   const generation = overlayGeneration;
-  playOverlayExitSound();
   await playOverlayExitAnimation();
 
   if (generation === overlayGeneration && !isOverlayEnabled()) {
@@ -731,10 +716,8 @@ async function toggleCombatantDefeated(combatant) {
   setRenderedDefeatedState(combatant.uuid, nextDefeated);
   suppressOverlayRefresh();
   if (nextDefeated) {
-    playDefeatedSound();
     playDefeatedAnimation(combatant.uuid);
   } else {
-    playRecoverySound();
     playRecoveryAnimation(combatant.uuid);
   }
 
@@ -798,26 +781,18 @@ function renderVSOverlay(combat, sides = getCombatSides(combat)) {
   applyPanelImages(root);
   host.insertBefore(root, host.firstElementChild);
   bindOverlayPanelClicks(root);
-  if (shouldAnimate) {
-    startOverlayMusic();
-    playOverlayEnterSound(allies.length + enemies.length);
-  }
+  if (shouldAnimate) startOverlayMusic();
   scheduleOverlayEnter(root, generation, shouldAnimate);
   if (introMode && shouldAnimate) {
     playedIntroKeys.add(getIntroKey(combat, sides));
     scheduleIntroOverlayExit(generation, introStepCount);
-    playIntroEntrySounds(introDelays, generation);
   }
-  if (!shouldAnimate && compactionSides.size) playCompactionSound(compactionSides.size);
-  if (!shouldAnimate && hasRepositionCandidate(root, previousLayout, newUuids, compactionSides)) playRepositionSound(previousLayout.size);
   triggerSideCompactionAnimations(root, compactionSides, newUuids, generation, shouldAnimate);
   triggerRepositionAnimations(root, previousLayout, newUuids, compactionSides, generation, shouldAnimate);
   if (introMode && shouldAnimate) triggerIntroEntryAnimations(root, introDelays, generation);
   else {
     triggerNewEntryAnimations(root, newUuids, generation);
-    if (!shouldAnimate) playNewEntrySounds(newUuids, generation);
   }
-  if (!shouldAnimate) playDefeatedChangeSounds(previousDefeatedState, currentDefeatedState, newUuids);
   triggerDefeatedChangeAnimations(root, previousDefeatedState, currentDefeatedState, newUuids, generation, shouldAnimate);
   previousOverlayUuids = getEntryUuidSet([...allies, ...enemies]);
   pendingNewUuids = new Set();
@@ -1329,965 +1304,6 @@ function canMoveEntryByOffset(entries, index, offset) {
   return index >= 0 && targetIndex >= 0 && targetIndex < entries.length;
 }
 
-function getFinalBlowOptions(sides = getCombatSides()) {
-  return ["allies", "enemies"].flatMap((side) => {
-    const sideLabel = localize(side === "allies" ? "config.allies" : "config.enemies");
-    return sides[side]
-      .filter((entry) => !entry.hidden)
-      .map(normalizeEntryImage)
-      .map((entry) => ({
-        uuid: entry.uuid,
-        label: `${sideLabel}: ${getEntryDisplayName(entry)}`
-      }));
-  }).filter((entry) => entry.uuid);
-}
-
-async function playFinalBlowScene(attackerUuid, loserUuid) {
-  if (!attackerUuid || !loserUuid || attackerUuid === loserUuid) {
-    ui.notifications?.warn(localize("notifications.finalBlowNeedsTargets"));
-    return;
-  }
-
-  const root = document.getElementById(OVERLAY_ID);
-  if (!root) {
-    ui.notifications?.warn(localize("notifications.finalBlowNeedsOverlay"));
-    return;
-  }
-
-  root.querySelector(".vs-final-blow-scene")?.remove();
-  const attackerSlot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(attackerUuid)}"]`);
-  const loserSlot = root.querySelector(`.vs-fighter-slot[data-uuid="${escapeSelector(loserUuid)}"]`);
-  if (!attackerSlot || !loserSlot) {
-    ui.notifications?.warn(localize("notifications.finalBlowNeedsOverlay"));
-    return;
-  }
-
-  const attackerSide = getRenderSide(attackerSlot.dataset.side);
-  const loserSide = getRenderSide(loserSlot.dataset.side);
-  const attackerEntry = getAssignedEntry(attackerUuid)?.entry;
-  const loserAssigned = getAssignedEntry(loserUuid);
-  const loserEntry = loserAssigned?.entry;
-  const attackerOnRight = attackerSide === "right";
-  const rootRect = root.getBoundingClientRect();
-  const attackerStartBox = getFinalBlowStartBox(attackerSlot, rootRect);
-  const loserStartBox = getFinalBlowStartBox(loserSlot, rootRect);
-  const attackerStart = getFinalBlowStartStyle(attackerStartBox);
-  const loserStart = getFinalBlowStartStyle(loserStartBox);
-
-  const scene = document.createElement("div");
-  scene.className = `vs-final-blow-scene is-waapi ${attackerOnRight ? "is-attacker-right" : "is-attacker-left"}`;
-  scene.innerHTML = `
-    <div class="vs-final-blow-shutter"></div>
-    <div class="vs-final-blow-aura"></div>
-    <div class="vs-final-blow-speedlines"></div>
-    <div class="vs-final-blow-slash"></div>
-    <div class="vs-final-blow-spark"></div>
-    <div class="vs-final-blow-wind"></div>
-    <div class="vs-final-blow-impact-frame"></div>
-    <div class="vs-final-blow-fighter vs-final-blow-attacker" data-side="${attackerSide}" style="${attackerStart}">
-      ${createFinalBlowCard(attackerSlot, attackerEntry)}
-    </div>
-    <div class="vs-final-blow-fighter vs-final-blow-loser" data-side="${loserSide}" style="${loserStart}">
-      ${createFinalBlowCard(loserSlot, loserEntry)}
-    </div>
-  `;
-
-  attackerSlot.classList.add("is-final-blow-source");
-  loserSlot.classList.add("is-final-blow-source");
-  root.appendChild(scene);
-  applyPanelImages(scene);
-
-  await waitForMs(40);
-  scene.classList.add("is-entering");
-  await runFinalBlowStoryboardCinematic(scene, {
-    attackerStart: attackerStartBox,
-    loserStart: loserStartBox,
-    attackerOnRight,
-    rootRect
-  });
-
-  attackerSlot.classList.remove("is-final-blow-source");
-  loserSlot.classList.remove("is-final-blow-source");
-  loserSlot.classList.add("is-defeated");
-  scene.remove();
-
-  if (loserAssigned?.side) {
-    await persistAssignedEntryState(loserAssigned.side, loserUuid, { defeated: true }, findCombatantByUuid(loserUuid));
-  }
-}
-
-function getFinalBlowStartBox(slot, rootRect) {
-  const rect = slot.getBoundingClientRect();
-  return {
-    left: rect.left - rootRect.left,
-    top: rect.top - rootRect.top,
-    width: rect.width,
-    height: rect.height
-  };
-}
-
-function getFinalBlowStartStyle(box) {
-  return [
-    `--final-start-left: ${box.left}px`,
-    `--final-start-top: ${box.top}px`,
-    `--final-start-width: ${box.width}px`,
-    `--final-start-height: ${box.height}px`
-  ].join("; ");
-}
-
-async function runFinalBlowCinematic(scene, { attackerStart, loserStart, attackerOnRight, rootRect }) {
-  const attacker = scene.querySelector(".vs-final-blow-attacker");
-  const loser = scene.querySelector(".vs-final-blow-loser");
-  const speedlines = scene.querySelector(".vs-final-blow-speedlines");
-  const wind = scene.querySelector(".vs-final-blow-wind");
-  const impact = scene.querySelector(".vs-final-blow-impact-frame");
-  const aura = scene.querySelector(".vs-final-blow-aura");
-  const slash = scene.querySelector(".vs-final-blow-slash");
-  const spark = scene.querySelector(".vs-final-blow-spark");
-  const loserPanel = loser?.querySelector(".vs-fighter-panel");
-  if (!attacker || !loser) return;
-
-  const focusWidth = clampNumber(rootRect.width * 0.3, 260, 480, 420);
-  const focusHeight = clampNumber(rootRect.height * 0.68, 390, 720, 620);
-  const margin = clampNumber(rootRect.width * 0.065, 34, 120, 80);
-  const focusTop = (rootRect.height - focusHeight) / 2;
-  const leftFocus = { left: margin, top: focusTop, width: focusWidth, height: focusHeight };
-  const rightFocus = { left: rootRect.width - margin - focusWidth, top: focusTop, width: focusWidth, height: focusHeight };
-  const attackerFocus = attackerOnRight ? rightFocus : leftFocus;
-  const loserFocus = attackerOnRight ? leftFocus : rightFocus;
-  const direction = attackerOnRight ? -1 : 1;
-
-  setFinalBlowBox(attacker, attackerStart);
-  setFinalBlowBox(loser, loserStart);
-  attacker.style.opacity = "1";
-  loser.style.opacity = "1";
-  playFinalBlowChargeSound();
-
-  await Promise.all([
-    animateFinalBlowBox(attacker, attackerStart, attackerFocus, {
-      duration: 560,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)"
-    }),
-    animateFinalBlowBox(loser, loserStart, loserFocus, {
-      duration: 560,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)"
-    }),
-    animateFinalBlowFx(aura, [
-      { opacity: 0, transform: "scale(0.92)" },
-      { opacity: 1, transform: "scale(1)", offset: 0.5 },
-      { opacity: 0.72, transform: "scale(1.035)" }
-    ], { duration: 620, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }),
-    animateFinalBlowFx(scene.querySelector(".vs-final-blow-shutter"), [
-      { opacity: 0 },
-      { opacity: 1 }
-    ], { duration: 280, easing: "ease-out" })
-  ]);
-
-  await waitForMs(160);
-  playFinalBlowDrawSound();
-
-  await Promise.all([
-    animateFinalBlowFx(attacker, [
-      { transform: "translate(0, 0) scale(1)", filter: "brightness(1.12) contrast(1.1)" },
-      { transform: `translate(${direction * -34}px, 0) scale(0.985) skewX(${direction * 2}deg)`, filter: "brightness(0.86) contrast(1.24) saturate(0.86)", offset: 0.62 },
-      { transform: "translate(0, 0) scale(1.018)", filter: "brightness(1.35) contrast(1.18)" }
-    ], { duration: 210, easing: "cubic-bezier(0.34, 0, 0.22, 1)" }),
-    animateFinalBlowFx(loser, [
-      { transform: "translate(0, 0) scale(1)", filter: "brightness(1.06) contrast(1.08)" },
-      { transform: `translate(${direction * 20}px, 0) scale(1.01)`, filter: "brightness(1.2) contrast(1.14)" },
-      { transform: "translate(0, 0) scale(1)", filter: "brightness(1.06) contrast(1.08)" }
-    ], { duration: 210, easing: "cubic-bezier(0.34, 0, 0.22, 1)" }),
-    animateFinalBlowFx(aura, [
-      { opacity: 0.72, filter: "brightness(1)" },
-      { opacity: 1, filter: "brightness(1.7)", offset: 0.48 },
-      { opacity: 0.62, filter: "brightness(1.1)" }
-    ], { duration: 210, easing: "steps(2, end)" })
-  ]);
-
-  playFinalBlowSlashSound();
-  await Promise.all([
-    animateFinalBlowFx(attacker, [
-      { transform: "translate(0, 0) scale(1)", filter: "brightness(1.08) contrast(1.08)" },
-      { transform: `translate(${direction * 430}px, 0) scale(1.12) skewX(${direction * -7}deg)`, filter: "brightness(2.25) contrast(1.48) saturate(1.28)", offset: 0.52 },
-      { transform: `translate(${direction * 250}px, 0) scale(1.035)`, filter: "brightness(1.2) contrast(1.18)" }
-    ], { duration: 280, easing: "cubic-bezier(0.6, 0, 0.22, 1)" }),
-    animateFinalBlowFx(loser, [
-      { transform: "translate(0, 0) scale(1)", filter: "brightness(1.08) contrast(1.08)" },
-      { transform: `translate(${direction * -390}px, 0) scale(1.09) skewX(${direction * 6}deg)`, filter: "brightness(1.84) contrast(1.34) saturate(1.18)", offset: 0.52 },
-      { transform: `translate(${direction * -170}px, 0) rotate(${direction * 1.2}deg) scale(0.99)`, filter: "brightness(0.62) grayscale(0.54) contrast(1.3)" }
-    ], { duration: 310, easing: "cubic-bezier(0.6, 0, 0.22, 1)" }),
-    animateFinalBlowFx(speedlines, getFinalBlowLineFrames(direction), { duration: 360, easing: "ease-out" }),
-    animateFinalBlowFx(slash, getFinalBlowSlashFrames(direction), { duration: 330, easing: "cubic-bezier(0.18, 0.8, 0.22, 1)" }),
-    animateFinalBlowFx(spark, getFinalBlowSparkFrames(direction), { duration: 440, easing: "cubic-bezier(0.16, 1, 0.3, 1)" })
-  ]);
-
-  playFinalBlowImpactSound(0.56);
-  await playFinalBlowImpact(scene, impact, wind, "#ffffff", "contrast(2.5) saturate(0)", direction, 16);
-  playFinalBlowImpactSound(0.72);
-  await playFinalBlowImpact(scene, impact, wind, "#050505", "contrast(3) invert(1) saturate(0)", direction, 22);
-  playFinalBlowImpactSound(0.92);
-  await playFinalBlowImpact(scene, impact, wind, "linear-gradient(90deg, #050505, #ffffff, #ff5752, #050505)", "contrast(3) saturate(1.8)", direction, 30);
-
-  playFinalBlowGlassSound();
-  await Promise.all([
-    animateFinalBlowFx(loserPanel, [
-      { filter: "brightness(0.72) grayscale(0.55) contrast(1.18)" },
-      { filter: "brightness(1.5) grayscale(0.25) contrast(1.5)", offset: 0.24 },
-      { filter: "brightness(0.48) grayscale(1) contrast(1.35)" }
-    ], { duration: 760, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }),
-    animateFinalBlowFx(cracks, [
-      { opacity: 0, transform: "scale(0.7)" },
-      { opacity: 1, transform: "scale(1.04)", offset: 0.35 },
-      { opacity: 0.96, transform: "scale(1)" }
-    ], { duration: 760, easing: "steps(4, end)" }),
-    animateFinalBlowFx(glass, [
-      { opacity: 0, transform: "scale(0.5) rotate(0deg)" },
-      { opacity: 0.98, transform: "scale(1.08) rotate(1deg)", offset: 0.35 },
-      { opacity: 0.68, transform: "scale(1.18) rotate(-1deg)" }
-    ], { duration: 760, easing: "steps(3, end)" }),
-    animateFinalBlowFx(aura, [
-      { opacity: 0.62, transform: "scale(1.035)", filter: "brightness(1)" },
-      { opacity: 1, transform: "scale(1.08)", filter: "brightness(1.8)", offset: 0.18 },
-      { opacity: 0, transform: "scale(1.16)", filter: "brightness(1.2)" }
-    ], { duration: 760, easing: "cubic-bezier(0.16, 1, 0.3, 1)" })
-  ]);
-
-  await waitForMs(170);
-
-  await Promise.all([
-    animateFinalBlowBox(attacker, attackerFocus, attackerStart, {
-      duration: 440,
-      easing: "cubic-bezier(0.72, 0, 0.84, 0)",
-      fromTransform: `translate(${direction * 230}px, 0) scale(1.025)`,
-      toTransform: "translate(0, 0) scale(1)",
-      fadeOut: true
-    }),
-    animateFinalBlowBox(loser, loserFocus, loserStart, {
-      duration: 440,
-      easing: "cubic-bezier(0.72, 0, 0.84, 0)",
-      fromTransform: `translate(${direction * -150}px, 0) rotate(${direction * 0.8}deg) scale(0.995)`,
-      toTransform: "translate(0, 0) scale(1)",
-      fadeOut: true
-    })
-  ]);
-}
-
-async function runFinalBlowStoryboardCinematic(scene, { attackerStart, loserStart, attackerOnRight, rootRect }) {
-  const attacker = scene.querySelector(".vs-final-blow-attacker");
-  const loser = scene.querySelector(".vs-final-blow-loser");
-  const speedlines = scene.querySelector(".vs-final-blow-speedlines");
-  const wind = scene.querySelector(".vs-final-blow-wind");
-  const glass = scene.querySelector(".vs-final-blow-glass");
-  const impact = scene.querySelector(".vs-final-blow-impact-frame");
-  const aura = scene.querySelector(".vs-final-blow-aura");
-  const slash = scene.querySelector(".vs-final-blow-slash");
-  const spark = scene.querySelector(".vs-final-blow-spark");
-  const cracks = scene.querySelector(".vs-final-blow-cracks");
-  const loserPanel = loser?.querySelector(".vs-fighter-panel");
-  const shutter = scene.querySelector(".vs-final-blow-shutter");
-  if (!attacker || !loser) return;
-
-  const direction = attackerOnRight ? -1 : 1;
-  const focusWidth = clampNumber(rootRect.width * 0.25, 230, 420, 360);
-  const focusHeight = clampNumber(rootRect.height * 0.68, 390, 720, 620);
-  const margin = clampNumber(rootRect.width * 0.055, 30, 100, 72);
-  const clashGap = clampNumber(rootRect.width * 0.028, 26, 62, 42);
-  const drift = clampNumber(rootRect.width * 0.06, 52, 130, 92);
-  const focusTop = (rootRect.height - focusHeight) / 2;
-  const centerX = rootRect.width / 2;
-  const leftFocus = { left: margin, top: focusTop, width: focusWidth, height: focusHeight };
-  const rightFocus = { left: rootRect.width - margin - focusWidth, top: focusTop, width: focusWidth, height: focusHeight };
-  const leftClash = { left: centerX - clashGap / 2 - focusWidth, top: focusTop, width: focusWidth, height: focusHeight };
-  const rightClash = { left: centerX + clashGap / 2, top: focusTop, width: focusWidth, height: focusHeight };
-  const attackerFocus = attackerOnRight ? rightFocus : leftFocus;
-  const loserFocus = attackerOnRight ? leftFocus : rightFocus;
-  const attackerClash = attackerOnRight ? rightClash : leftClash;
-  const loserClash = attackerOnRight ? leftClash : rightClash;
-  const attackerAfterHit = attackerOnRight
-    ? { ...rightFocus, left: rightFocus.left + drift * 0.35 }
-    : { ...leftFocus, left: leftFocus.left - drift * 0.35 };
-  const loserAfterHit = attackerOnRight
-    ? { ...leftFocus, left: leftFocus.left - drift, width: focusWidth * 0.86 }
-    : { ...rightFocus, left: rightFocus.left + drift, width: focusWidth * 0.86 };
-
-  setFinalBlowBox(attacker, attackerStart);
-  setFinalBlowBox(loser, loserStart);
-  attacker.style.opacity = "1";
-  loser.style.opacity = "1";
-  playFinalBlowChargeSound();
-
-  await Promise.all([
-    animateFinalBlowBox(attacker, attackerStart, attackerFocus, {
-      duration: 520,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      toTransform: `rotate(${direction * -1.2}deg) scale(1)`
-    }),
-    animateFinalBlowBox(loser, loserStart, loserFocus, {
-      duration: 520,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      toTransform: `rotate(${direction * 1.2}deg) scale(1)`
-    }),
-    animateFinalBlowFx(aura, [
-      { opacity: 0, transform: "scale(0.88)", filter: "brightness(0.8)" },
-      { opacity: 0.9, transform: "scale(1.02)", filter: "brightness(1.6)", offset: 0.62 },
-      { opacity: 0.62, transform: "scale(1)", filter: "brightness(1.08)" }
-    ], { duration: 600, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }),
-    animateFinalBlowFx(shutter, [
-      { opacity: 0 },
-      { opacity: 1 }
-    ], { duration: 260, easing: "ease-out" })
-  ]);
-
-  await waitForMs(80);
-  playFinalBlowDrawSound();
-
-  await Promise.all([
-    animateFinalBlowBox(attacker, attackerFocus, attackerClash, {
-      duration: 360,
-      easing: "cubic-bezier(0.18, 0.8, 0.22, 1)",
-      fromTransform: `translate(${direction * -18}px, 0) rotate(${direction * -1.4}deg) scale(0.985)`,
-      toTransform: `translate(${direction * 8}px, 0) rotate(${direction * 1.1}deg) scale(1.028)`
-    }),
-    animateFinalBlowBox(loser, loserFocus, loserClash, {
-      duration: 360,
-      easing: "cubic-bezier(0.18, 0.8, 0.22, 1)",
-      fromTransform: `translate(${direction * 18}px, 0) rotate(${direction * 1.4}deg) scale(0.985)`,
-      toTransform: `translate(${direction * -8}px, 0) rotate(${direction * -1.1}deg) scale(1.018)`
-    }),
-    animateFinalBlowFx(speedlines, getFinalBlowLineFrames(direction), { duration: 420, easing: "ease-out" }),
-    animateFinalBlowFx(aura, [
-      { opacity: 0.62, transform: "scale(0.98)", filter: "brightness(1)" },
-      { opacity: 1, transform: "scale(1.08)", filter: "brightness(1.9)", offset: 0.62 },
-      { opacity: 0.78, transform: "scale(1.02)", filter: "brightness(1.18)" }
-    ], { duration: 360, easing: "cubic-bezier(0.16, 1, 0.3, 1)" })
-  ]);
-
-  playFinalBlowSlashSound();
-  await Promise.all([
-    animateFinalBlowFx(attacker, [
-      { transform: `translate(${direction * 8}px, 0) rotate(${direction * 1.1}deg) scale(1.028)`, filter: "brightness(1.25) contrast(1.12)" },
-      { transform: `translate(${direction * 120}px, 0) rotate(${direction * -2}deg) scale(1.08) skewX(${direction * -6}deg)`, filter: "brightness(2.35) contrast(1.5) saturate(1.32)", offset: 0.42 },
-      { transform: `translate(${direction * 38}px, 0) rotate(${direction * 0.7}deg) scale(1.02)`, filter: "brightness(1.24) contrast(1.16)" }
-    ], { duration: 300, easing: "cubic-bezier(0.55, 0, 0.22, 1)" }),
-    animateFinalBlowFx(loser, [
-      { transform: `translate(${direction * -8}px, 0) rotate(${direction * -1.1}deg) scale(1.018)`, filter: "brightness(1.1) contrast(1.1)" },
-      { transform: `translate(${direction * -118}px, 0) rotate(${direction * 2}deg) scale(1.06) skewX(${direction * 5}deg)`, filter: "brightness(1.9) contrast(1.38) saturate(1.16)", offset: 0.42 },
-      { transform: `translate(${direction * -42}px, 0) rotate(${direction * -0.9}deg) scale(0.995)`, filter: "brightness(0.76) grayscale(0.38) contrast(1.24)" }
-    ], { duration: 320, easing: "cubic-bezier(0.55, 0, 0.22, 1)" }),
-    animateFinalBlowFx(slash, getFinalBlowSlashFrames(direction), { duration: 360, easing: "cubic-bezier(0.18, 0.8, 0.22, 1)" }),
-    animateFinalBlowFx(spark, getFinalBlowSparkFrames(direction), { duration: 520, easing: "cubic-bezier(0.16, 1, 0.3, 1)" })
-  ]);
-
-  playFinalBlowImpactSound(0.56);
-  await playFinalBlowImpact(scene, impact, wind, {
-    mode: "white",
-    background: "#ffffff",
-    fighterFilter: "grayscale(1) contrast(4.4) brightness(1.7)",
-    direction,
-    strength: 18,
-    duration: 5
-  });
-  playFinalBlowImpactSound(0.72);
-  await playFinalBlowImpact(scene, impact, wind, {
-    mode: "black",
-    background: "#050505",
-    fighterFilter: "invert(1) grayscale(1) contrast(5) brightness(0.42)",
-    direction,
-    strength: 25,
-    duration: 5
-  });
-  playFinalBlowImpactSound(0.92);
-  await playFinalBlowImpact(scene, impact, wind, {
-    mode: "cut",
-    background: "#ffffff",
-    fighterFilter: "grayscale(1) contrast(5.2) brightness(1.85)",
-    direction,
-    strength: 34,
-    duration: 5
-  });
-
-  await Promise.all([
-    animateFinalBlowBox(attacker, attackerClash, attackerAfterHit, {
-      duration: 420,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fromTransform: `translate(${direction * 38}px, 0) rotate(${direction * 0.7}deg) scale(1.02)`,
-      toTransform: `translate(${direction * -10}px, 0) rotate(${direction * -0.6}deg) scale(1.015)`
-    }),
-    animateFinalBlowBox(loser, loserClash, loserAfterHit, {
-      duration: 420,
-      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-      fromTransform: `translate(${direction * -42}px, 0) rotate(${direction * -0.9}deg) scale(0.995)`,
-      toTransform: `translate(${direction * 22}px, 0) rotate(${direction * 2.2}deg) scale(0.965)`
-    }),
-    animateFinalBlowFx(aura, [
-      { opacity: 0.8, transform: "scale(1.02)", filter: "brightness(1.2)" },
-      { opacity: 0.28, transform: "scale(0.98)", filter: "brightness(0.85)" }
-    ], { duration: 420, easing: "ease-out" })
-  ]);
-
-  await waitForMs(80);
-  await Promise.all([
-    animateFinalBlowFx(loserPanel, [
-      { filter: "brightness(0.72) grayscale(0.55) contrast(1.18)" },
-      { filter: "brightness(1.32) grayscale(0.35) contrast(1.36)", offset: 0.18 },
-      { filter: "brightness(0.48) grayscale(1) contrast(1.35)" }
-    ], { duration: 360, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }),
-    animateFinalBlowFx(aura, [
-      { opacity: 0.52, transform: "scale(1.02)", filter: "brightness(1)" },
-      { opacity: 1, transform: "scale(1.08)", filter: "brightness(1.8)", offset: 0.18 },
-      { opacity: 0, transform: "scale(1.16)", filter: "brightness(1.2)" }
-    ], { duration: 360, easing: "cubic-bezier(0.16, 1, 0.3, 1)" })
-  ]);
-
-  await waitForMs(120);
-  await Promise.all([
-    animateFinalBlowBox(attacker, attackerAfterHit, attackerStart, {
-      duration: 440,
-      easing: "cubic-bezier(0.72, 0, 0.84, 0)",
-      fromTransform: `translate(${direction * -10}px, 0) rotate(${direction * -0.6}deg) scale(1.015)`,
-      toTransform: "translate(0, 0) scale(1)",
-      fadeOut: true
-    }),
-    animateFinalBlowBox(loser, loserAfterHit, loserStart, {
-      duration: 440,
-      easing: "cubic-bezier(0.72, 0, 0.84, 0)",
-      fromTransform: `translate(${direction * 22}px, 0) rotate(${direction * 2.2}deg) scale(0.965)`,
-      toTransform: "translate(0, 0) scale(1)",
-      fadeOut: true
-    })
-  ]);
-}
-
-function setFinalBlowBox(element, box) {
-  element.style.left = `${box.left}px`;
-  element.style.top = `${box.top}px`;
-  element.style.width = `${box.width}px`;
-  element.style.height = `${box.height}px`;
-}
-
-async function animateFinalBlowBox(element, fromBox, toBox, options = {}) {
-  const animation = element.animate([
-    {
-      left: `${fromBox.left}px`,
-      top: `${fromBox.top}px`,
-      width: `${fromBox.width}px`,
-      height: `${fromBox.height}px`,
-      opacity: 1,
-      transform: options.fromTransform ?? "translate(0, 0) scale(1)"
-    },
-    {
-      left: `${toBox.left}px`,
-      top: `${toBox.top}px`,
-      width: `${toBox.width}px`,
-      height: `${toBox.height}px`,
-      opacity: options.fadeOut ? 0 : 1,
-      transform: options.toTransform ?? "translate(0, 0) scale(1)"
-    }
-  ], {
-    duration: options.duration ?? 400,
-    easing: options.easing ?? "ease",
-    fill: "forwards"
-  });
-
-  await animation.finished.catch(() => {});
-  setFinalBlowBox(element, toBox);
-  element.style.opacity = options.fadeOut ? "0" : "1";
-  element.style.transform = options.toTransform ?? "translate(0, 0) scale(1)";
-}
-
-function animateFinalBlowFx(element, keyframes, options = {}) {
-  if (!element) return Promise.resolve();
-  const animation = element.animate(keyframes, {
-    duration: options.duration ?? 200,
-    easing: options.easing ?? "ease",
-    fill: options.fill ?? "both"
-  });
-  return animation.finished.catch(() => {});
-}
-
-function getFinalBlowLineFrames(direction = 1) {
-  return [
-    { opacity: 0, transform: `translateX(${direction * -34}%) skewX(-18deg) scaleX(1.28)` },
-    { opacity: 1, transform: `translateX(${direction * -4}%) skewX(-18deg) scaleX(1.32)`, offset: 0.22 },
-    { opacity: 0.72, transform: `translateX(${direction * 12}%) skewX(-18deg) scaleX(1.22)`, offset: 0.58 },
-    { opacity: 0, transform: `translateX(${direction * 36}%) skewX(-18deg) scaleX(1.28)` }
-  ];
-}
-
-function getFinalBlowSlashFrames(direction = 1) {
-  return [
-    { opacity: 0, transform: `translate(${direction * -32}%, -50%) rotate(${direction * -14}deg) scaleX(0.16) scaleY(0.62)`, filter: "blur(6px) brightness(1.4)" },
-    { opacity: 1, transform: `translate(${direction * -7}%, -50%) rotate(${direction * -14}deg) scaleX(1.08) scaleY(1)`, filter: "blur(0) brightness(2.1)", offset: 0.34 },
-    { opacity: 0.55, transform: `translate(${direction * 12}%, -50%) rotate(${direction * -14}deg) scaleX(1.42) scaleY(0.88)`, filter: "blur(1px) brightness(1.6)", offset: 0.62 },
-    { opacity: 0, transform: `translate(${direction * 28}%, -50%) rotate(${direction * -14}deg) scaleX(1.62) scaleY(0.7)`, filter: "blur(5px) brightness(1.1)" }
-  ];
-}
-
-function getFinalBlowSparkFrames(direction = 1) {
-  return [
-    { opacity: 0, transform: `translate(${direction * 4}%, -50%) scale(0.18) rotate(0deg)`, filter: "brightness(1)" },
-    { opacity: 1, transform: `translate(${direction * 2}%, -50%) scale(0.68) rotate(${direction * 6}deg)`, filter: "brightness(2.4)", offset: 0.18 },
-    { opacity: 0.86, transform: `translate(${direction * -4}%, -50%) scale(1.2) rotate(${direction * -8}deg)`, filter: "brightness(1.7)", offset: 0.52 },
-    { opacity: 0, transform: `translate(${direction * -10}%, -50%) scale(1.68) rotate(${direction * -16}deg)`, filter: "brightness(1)" }
-  ];
-}
-
-async function playFinalBlowImpact(scene, impact, wind, options = {}) {
-  const {
-    background = "#ffffff",
-    fighterFilter = "invert(1) grayscale(1) contrast(3)",
-    mode = "white",
-    direction = 1,
-    strength = 18,
-    duration = 92
-  } = options;
-  const fighters = [...scene.querySelectorAll(".vs-final-blow-fighter")];
-  const previousFilters = fighters.map((fighter) => fighter.style.filter);
-  const previousSceneBackground = scene.style.background;
-  const previousImpactOpacity = impact?.style.opacity ?? "";
-  const impactClass = `is-impact-${mode}`;
-  const fighterModeClass = mode === "black" ? "is-impact-black" : "";
-
-  scene.classList.add("is-impact-frame");
-  scene.style.background = background;
-  if (impact) {
-    impact.style.background = background;
-    impact.style.filter = "none";
-    impact.style.opacity = "1";
-    impact.classList.remove("is-impact-white", "is-impact-black", "is-impact-cut");
-    impact.classList.add(impactClass);
-  }
-  fighters.forEach((fighter) => {
-    fighter.style.filter = fighterFilter;
-    fighter.classList.add("is-impact-sketch");
-    if (fighterModeClass) fighter.classList.add(fighterModeClass);
-  });
-
-  await Promise.all([
-    animateFinalBlowFx(scene, getFinalBlowCameraShakeFrames(direction, strength), { duration: 150, easing: "steps(4, end)" }),
-    waitForMs(duration),
-    animateFinalBlowFx(wind, [
-      { opacity: 0, transform: "scale(0.18)", filter: "blur(0)" },
-      { opacity: 0.95, transform: "scale(0.72)", filter: "blur(0)", offset: 0.22 },
-      { opacity: 0, transform: "scale(1.58)", filter: "blur(2px)" }
-    ], { duration: 160, easing: "steps(2, end)" })
-  ]);
-
-  fighters.forEach((fighter, index) => {
-    fighter.style.filter = previousFilters[index] ?? "";
-    fighter.classList.remove("is-impact-sketch", "is-impact-black");
-  });
-  scene.classList.remove("is-impact-frame");
-  scene.style.background = previousSceneBackground;
-  if (impact) {
-    impact.style.opacity = previousImpactOpacity;
-    impact.classList.remove("is-impact-white", "is-impact-black", "is-impact-cut");
-  }
-}
-
-function getFinalBlowCameraShakeFrames(direction = 1, strength = 18) {
-  const side = Math.sign(direction) || 1;
-  return [
-    { transform: "translate(0, 0) rotate(0deg)" },
-    { transform: `translate(${side * strength}px, -${strength * 0.35}px) rotate(${side * 0.22}deg)` },
-    { transform: `translate(${-side * strength * 0.72}px, ${strength * 0.28}px) rotate(${-side * 0.18}deg)` },
-    { transform: `translate(${side * strength * 0.38}px, ${strength * 0.14}px) rotate(${side * 0.08}deg)` },
-    { transform: "translate(0, 0) rotate(0deg)" }
-  ];
-}
-
-function createFinalBlowCard(slot, entry) {
-  const panel = slot.querySelector(".vs-fighter-panel");
-  const name = getEntryDisplayName(entry) || slot.querySelector(".vs-fighter-name")?.textContent || localize("common.unknown");
-  const img = panel?.dataset.img || entry?.img || FALLBACK_IMG;
-  const style = panel?.getAttribute("style") || "";
-  const nameMarkup = entry?.nameHidden
-    ? ""
-    : `<div class="vs-fighter-name" title="${escapeAttr(name)}">${escapeHtml(name)}</div>`;
-
-  return `
-    <div class="vs-final-blow-card">
-      <div class="vs-fighter-panel" data-img="${escapeAttr(img)}" style="${style}">
-        <div class="vs-fighter-image"></div>
-        <div class="vs-fighter-shade"></div>
-        ${nameMarkup}
-      </div>
-    </div>
-  `;
-}
-
-function waitForMs(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function getFinalBlowAudioContext() {
-  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext;
-  if (!AudioContextClass) return null;
-
-  finalBlowAudioContext ??= new AudioContextClass();
-  if (finalBlowAudioContext.state === "suspended") finalBlowAudioContext.resume?.();
-  return finalBlowAudioContext;
-}
-
-function getFinalBlowFxVolume(multiplier = 1) {
-  let globalVolume = 0.75;
-  try {
-    globalVolume = Number(game.settings?.get?.("core", "globalInterfaceVolume"));
-  } catch (error) {
-    globalVolume = Number(game.audio?.interfaceVolume ?? game.audio?.volume ?? 0.75);
-  }
-
-  const baseVolume = Number.isFinite(globalVolume) ? globalVolume : 0.75;
-  return clampNumber(baseVolume * multiplier, 0, 1, 0.55);
-}
-
-function createFinalBlowNoiseBuffer(context, duration = 0.28) {
-  const length = Math.max(1, Math.floor(context.sampleRate * duration));
-  const buffer = context.createBuffer(1, length, context.sampleRate);
-  const data = buffer.getChannelData(0);
-
-  for (let index = 0; index < length; index += 1) {
-    data[index] = (Math.random() * 2) - 1;
-  }
-
-  return buffer;
-}
-
-function connectFinalBlowGain(context, destination, startTime, envelope = {}) {
-  const gain = context.createGain();
-  const attack = envelope.attack ?? 0.018;
-  const hold = envelope.hold ?? 0.02;
-  const decay = envelope.decay ?? 0.24;
-  const peak = getFinalBlowFxVolume(envelope.volume ?? 0.4);
-
-  gain.gain.setValueAtTime(0.0001, startTime);
-  gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak), startTime + attack);
-  gain.gain.setValueAtTime(Math.max(0.0001, peak), startTime + attack + hold);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + attack + hold + decay);
-  gain.connect(destination);
-  return gain;
-}
-
-function playFinalBlowTone({ type = "sine", frequency = 220, endFrequency, duration = 0.2, volume = 0.35, delay = 0, detune = 0, destination, envelope } = {}) {
-  const context = getFinalBlowAudioContext();
-  if (!context) return;
-
-  const startTime = context.currentTime + delay;
-  const oscillator = context.createOscillator();
-  oscillator.type = type;
-  oscillator.frequency.setValueAtTime(frequency, startTime);
-  if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), startTime + duration);
-  oscillator.detune.setValueAtTime(detune, startTime);
-
-  const gain = connectFinalBlowGain(context, destination ?? context.destination, startTime, {
-    attack: envelope?.attack ?? 0.018,
-    hold: envelope?.hold ?? duration * 0.12,
-    decay: envelope?.decay ?? duration * 0.92,
-    volume
-  });
-
-  oscillator.connect(gain);
-  oscillator.start(startTime);
-  oscillator.stop(startTime + duration + 0.08);
-}
-
-function playFinalBlowNoise({ duration = 0.24, volume = 0.35, delay = 0, filterType = "bandpass", frequency = 900, endFrequency, q = 1.2, destination, envelope } = {}) {
-  const context = getFinalBlowAudioContext();
-  if (!context) return;
-
-  const startTime = context.currentTime + delay;
-  const source = context.createBufferSource();
-  const filter = context.createBiquadFilter();
-  source.buffer = createFinalBlowNoiseBuffer(context, duration + 0.08);
-  filter.type = filterType;
-  filter.frequency.setValueAtTime(frequency, startTime);
-  if (endFrequency) filter.frequency.exponentialRampToValueAtTime(Math.max(40, endFrequency), startTime + duration);
-  filter.Q.setValueAtTime(q, startTime);
-
-  const gain = connectFinalBlowGain(context, destination ?? context.destination, startTime, {
-    attack: envelope?.attack ?? 0.012,
-    hold: envelope?.hold ?? duration * 0.06,
-    decay: envelope?.decay ?? duration * 0.96,
-    volume
-  });
-
-  source.connect(filter);
-  filter.connect(gain);
-  source.start(startTime);
-  source.stop(startTime + duration + 0.08);
-}
-
-function createCinematicCompressor({ threshold = -22, ratio = 6, attack = 0.004, release = 0.24 } = {}) {
-  const context = getFinalBlowAudioContext();
-  if (!context) return null;
-
-  const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = threshold;
-  compressor.knee.value = 10;
-  compressor.ratio.value = ratio;
-  compressor.attack.value = attack;
-  compressor.release.value = release;
-  compressor.connect(context.destination);
-  return compressor;
-}
-
-function playCinematicBoom({ volume = 0.3, delay = 0, duration = 0.54, destination } = {}) {
-  const output = destination ?? createCinematicCompressor({ threshold: -24, ratio: 8, release: 0.32 });
-  if (!output) return;
-
-  playFinalBlowTone({
-    type: "sine",
-    frequency: 52,
-    endFrequency: 26,
-    duration,
-    volume,
-    delay,
-    destination: output,
-    envelope: { attack: 0.004, hold: 0.035, decay: duration * 1.05 }
-  });
-  playFinalBlowNoise({
-    duration: duration * 0.55,
-    volume: volume * 0.42,
-    delay,
-    filterType: "lowpass",
-    frequency: 260,
-    endFrequency: 70,
-    q: 0.5,
-    destination: output,
-    envelope: { attack: 0.003, hold: 0.018, decay: duration * 0.7 }
-  });
-}
-
-function playMetalResonance({ volume = 0.12, delay = 0, destination } = {}) {
-  const output = destination ?? createCinematicCompressor({ threshold: -26, ratio: 4, release: 0.42 });
-  if (!output) return;
-
-  [
-    { frequency: 278, duration: 0.58, detune: -8, level: 0.52 },
-    { frequency: 431, duration: 0.46, detune: 11, level: 0.35 },
-    { frequency: 763, duration: 0.34, detune: -5, level: 0.18 },
-    { frequency: 1187, duration: 0.26, detune: 7, level: 0.1 }
-  ].forEach((partial) => {
-    playFinalBlowTone({
-      type: "sine",
-      frequency: partial.frequency,
-      endFrequency: partial.frequency * 0.985,
-      duration: partial.duration,
-      volume: volume * partial.level,
-      delay,
-      detune: partial.detune,
-      destination: output,
-      envelope: { attack: 0.002, hold: 0.01, decay: partial.duration }
-    });
-  });
-}
-
-function playBladeDrawTexture({ volume = 0.16, delay = 0, destination } = {}) {
-  const output = destination ?? createCinematicCompressor({ threshold: -24, ratio: 5, release: 0.22 });
-  if (!output) return;
-
-  playFinalBlowNoise({
-    duration: 0.34,
-    volume,
-    delay,
-    filterType: "bandpass",
-    frequency: 520,
-    endFrequency: 2300,
-    q: 1.35,
-    destination: output,
-    envelope: { attack: 0.018, hold: 0.035, decay: 0.28 }
-  });
-  playMetalResonance({ volume: volume * 0.55, delay: delay + 0.11, destination: output });
-}
-
-function playBladeWhooshTexture({ volume = 0.28, delay = 0, destination } = {}) {
-  const output = destination ?? createCinematicCompressor({ threshold: -23, ratio: 6, release: 0.24 });
-  if (!output) return;
-
-  playFinalBlowNoise({
-    duration: 0.36,
-    volume,
-    delay,
-    filterType: "bandpass",
-    frequency: 2100,
-    endFrequency: 180,
-    q: 0.62,
-    destination: output,
-    envelope: { attack: 0.006, hold: 0.02, decay: 0.36 }
-  });
-  playFinalBlowNoise({
-    duration: 0.12,
-    volume: volume * 0.38,
-    delay: delay + 0.055,
-    filterType: "highpass",
-    frequency: 1400,
-    endFrequency: 900,
-    q: 0.75,
-    destination: output,
-    envelope: { attack: 0.002, hold: 0.006, decay: 0.11 }
-  });
-}
-
-function playGlassCrackTexture({ volume = 0.12, delay = 0 } = {}) {
-  const output = createCinematicCompressor({ threshold: -26, ratio: 5, release: 0.32 });
-  if (!output) return;
-
-  [0, 0.018, 0.041, 0.072, 0.118, 0.17].forEach((offset, index) => {
-    playFinalBlowNoise({
-      duration: 0.035 + (index * 0.006),
-      volume: volume * (1 - (index * 0.08)),
-      delay: delay + offset,
-      filterType: "highpass",
-      frequency: 1300 + (index * 330),
-      endFrequency: 2400 + (index * 280),
-      q: 0.8,
-      destination: output,
-      envelope: { attack: 0.001, hold: 0.002, decay: 0.045 }
-    });
-  });
-
-  [690, 1040, 1560].forEach((frequency, index) => {
-    playFinalBlowTone({
-      type: "sine",
-      frequency,
-      endFrequency: frequency * 0.68,
-      duration: 0.18 + (index * 0.04),
-      volume: volume * 0.12,
-      delay: delay + 0.026 + (index * 0.035),
-      detune: index % 2 ? -11 : 9,
-      destination: output,
-      envelope: { attack: 0.001, hold: 0.004, decay: 0.18 }
-    });
-  });
-}
-
-function playFinalBlowChargeSound() {
-  const output = createCinematicCompressor({ threshold: -22, ratio: 5, release: 0.34 });
-  if (!output) return;
-
-  playCinematicBoom({ volume: 0.18, duration: 0.72, destination: output });
-  playFinalBlowNoise({ duration: 0.74, volume: 0.12, filterType: "lowpass", frequency: 110, endFrequency: 520, q: 0.48, destination: output });
-  playBladeDrawTexture({ volume: 0.08, delay: 0.22, destination: output });
-}
-
-function playFinalBlowDrawSound() {
-  playBladeDrawTexture({ volume: 0.18 });
-}
-
-function playFinalBlowSlashSound() {
-  const output = createCinematicCompressor({ threshold: -22, ratio: 7, release: 0.2 });
-  if (!output) return;
-
-  playBladeWhooshTexture({ volume: 0.36, destination: output });
-  playCinematicBoom({ volume: 0.1, duration: 0.3, delay: 0.04, destination: output });
-}
-
-function playFinalBlowImpactSound(volume = 0.7) {
-  const context = getFinalBlowAudioContext();
-  if (!context) return;
-
-  const compressor = context.createDynamicsCompressor();
-  compressor.threshold.value = -24;
-  compressor.knee.value = 8;
-  compressor.ratio.value = 10;
-  compressor.attack.value = 0.001;
-  compressor.release.value = 0.22;
-  compressor.connect(context.destination);
-
-  playCinematicBoom({ volume: 0.46 * volume, duration: 0.42, destination: compressor });
-  playFinalBlowNoise({ duration: 0.12, volume: 0.26 * volume, filterType: "lowpass", frequency: 360, endFrequency: 70, q: 0.46, destination: compressor, envelope: { attack: 0.001, hold: 0.012, decay: 0.18 } });
-  playMetalResonance({ volume: 0.18 * volume, delay: 0.018, destination: compressor });
-}
-
-function playFinalBlowGlassSound() {
-  playGlassCrackTexture({ volume: 0.16 });
-}
-
-function playOverlayEnterSound(entryCount = 1) {
-  const count = clampNumber(Number(entryCount) || 1, 1, 10, 1);
-  playCinematicBoom({ volume: 0.2, duration: 0.58 });
-  playFinalBlowNoise({ duration: 0.46, volume: 0.1, filterType: "lowpass", frequency: 140, endFrequency: 620, q: 0.52 });
-
-  for (let index = 0; index < Math.min(count, 4); index += 1) {
-    playBladeWhooshTexture({ volume: 0.035, delay: 0.14 + (index * 0.055) });
-  }
-}
-
-function playOverlayExitSound() {
-  playBladeWhooshTexture({ volume: 0.12 });
-  playCinematicBoom({ volume: 0.1, duration: 0.42, delay: 0.04 });
-}
-
-function playSlotEntrySound(index = 0) {
-  const delay = Math.min(index * 0.035, 0.24);
-  playBladeWhooshTexture({ volume: 0.075, delay });
-}
-
-function playNewEntrySounds(newUuids, generation) {
-  if (!newUuids?.size) return;
-
-  [...newUuids].slice(0, 8).forEach((uuid, index) => {
-    window.setTimeout(() => {
-      if (generation !== overlayGeneration) return;
-      playSlotEntrySound(index);
-    }, Math.min(index * 80, 520));
-  });
-}
-
-function playIntroEntrySounds(introDelays, generation) {
-  if (!introDelays?.size) return;
-
-  [...introDelays.entries()].slice(0, 14).forEach(([, delay], index) => {
-    window.setTimeout(() => {
-      if (generation !== overlayGeneration) return;
-      playSlotEntrySound(index);
-    }, Math.max(0, delay));
-  });
-}
-
-function playSlotExitSound(side) {
-  const delay = side === "enemies" ? 0.012 : 0;
-  playBladeWhooshTexture({ volume: 0.09, delay });
-}
-
-function playDefeatedSound() {
-  playFinalBlowImpactSound(0.5);
-  playCinematicBoom({ volume: 0.12, duration: 0.6, delay: 0.05 });
-}
-
-function playRecoverySound() {
-  playFinalBlowNoise({ duration: 0.38, volume: 0.06, filterType: "bandpass", frequency: 260, endFrequency: 980, q: 0.7 });
-  playMetalResonance({ volume: 0.045, delay: 0.08 });
-}
-
-function playDefeatedChangeSounds(previousState, currentState, newUuids = new Set()) {
-  if (!previousState?.size || !currentState?.size) return;
-
-  let delay = 0;
-  currentState.forEach((defeated, uuid) => {
-    if (newUuids.has(uuid) || !previousState.has(uuid) || previousState.get(uuid) === defeated) return;
-
-    window.setTimeout(() => {
-      if (defeated) playDefeatedSound();
-      else playRecoverySound();
-    }, delay);
-    delay = Math.min(delay + 90, 360);
-  });
-}
-
-function playCompactionSound(sideCount = 1) {
-  const volume = sideCount > 1 ? 0.07 : 0.045;
-  playFinalBlowNoise({ duration: 0.14, volume, filterType: "lowpass", frequency: 240, endFrequency: 420, q: 0.64 });
-  playCinematicBoom({ volume: 0.035, duration: 0.2 });
-}
-
-function playRepositionSound(layoutCount = 1) {
-  const count = Math.min(3, Math.max(1, Math.round((Number(layoutCount) || 1) / 3)));
-  for (let index = 0; index < count; index += 1) {
-    playBladeWhooshTexture({ volume: 0.025, delay: index * 0.035 });
-  }
-}
-
 function setAssignedEntryDefeated(side, uuid, defeated) {
   const entry = getCombatSides()[side]?.find((candidate) => candidate.uuid === uuid);
   if (entry) entry.defeated = defeated;
@@ -2295,10 +1311,8 @@ function setAssignedEntryDefeated(side, uuid, defeated) {
   setRenderedDefeatedState(uuid, defeated);
   suppressOverlayRefresh();
   if (defeated) {
-    playDefeatedSound();
     playDefeatedAnimation(uuid);
   } else {
-    playRecoverySound();
     playRecoveryAnimation(uuid);
   }
 
@@ -2307,7 +1321,6 @@ function setAssignedEntryDefeated(side, uuid, defeated) {
 
 function setAssignedEntryHidden(side, uuid, hidden) {
   if (hidden) {
-    playSlotExitSound(side);
     playSlotExitAnimation(uuid, side).finally(() => {
       pendingCompactionSides.add(side);
       persistAssignedEntryState(side, uuid, { hidden: true }, undefined, { suppressRefresh: false, compactionSide: side });
@@ -2316,7 +1329,6 @@ function setAssignedEntryHidden(side, uuid, hidden) {
   }
 
   pendingNewUuids.add(uuid);
-  playSlotEntrySound(0);
   persistAssignedEntryState(side, uuid, { hidden: false }, undefined, { suppressRefresh: false, newUuid: uuid });
 }
 
@@ -2636,6 +1648,10 @@ function removeVSOverlay({ stopMusic = false } = {}) {
   root.remove();
 }
 
+function getEntryUuidSet(entries) {
+  return new Set(entries.map((entry) => entry.uuid).filter(Boolean));
+}
+
 async function restartOverlayMusic() {
   await stopOverlayMusic();
   startOverlayMusic();
@@ -2707,10 +1723,6 @@ function getCollectionValues(collection) {
   if (Array.isArray(collection.contents)) return collection.contents;
   if (typeof collection.values === "function") return [...collection.values()];
   return [...collection].map((entry) => Array.isArray(entry) ? entry[1] : entry);
-}
-
-function getEntryUuidSet(entries) {
-  return new Set(entries.map((entry) => entry.uuid).filter(Boolean));
 }
 
 function suppressOverlayRefresh(duration = 900) {
@@ -3086,7 +2098,6 @@ class VSOverlayConfigApp extends Application {
     return $($.parseHTML(`
       <form class="vs-config-form">
         ${this.createMusicMarkup()}
-        ${this.createFinalBlowMarkup(sides)}
         <div class="vs-config-sides">
           ${this.createSideMarkup("allies", localize("config.allies"), sides.allies)}
           ${this.createSideMarkup("enemies", localize("config.enemies"), sides.enemies)}
@@ -3169,29 +2180,6 @@ class VSOverlayConfigApp extends Application {
     `;
   }
 
-  createFinalBlowMarkup(sides) {
-    const entries = getFinalBlowOptions(sides);
-
-    return `
-      <section class="vs-config-final-blow">
-        <div class="vs-config-side-header">
-          <h3>${localize("config.finalBlow")}</h3>
-        </div>
-        <div class="vs-config-final-blow-fields">
-          <select name="finalBlowAttacker">
-            <option value="">${localize("config.finalBlowAttacker")}</option>
-            ${entries.map((entry) => `<option value="${escapeAttr(entry.uuid)}">${escapeHtml(entry.label)}</option>`).join("")}
-          </select>
-          <select name="finalBlowLoser">
-            <option value="">${localize("config.finalBlowLoser")}</option>
-            ${entries.map((entry) => `<option value="${escapeAttr(entry.uuid)}">${escapeHtml(entry.label)}</option>`).join("")}
-          </select>
-          <button type="button" data-action="final-blow"><i class="fas fa-bolt"></i><span>${localize("config.finalBlowPlay")}</span></button>
-        </div>
-      </section>
-    `;
-  }
-
   activateListeners(html) {
     super.activateListeners(html);
 
@@ -3203,15 +2191,6 @@ class VSOverlayConfigApp extends Application {
 
     html.find("select[name='musicSound']").on("change", async (event) => {
       await game.settings.set(MODULE_ID, SETTING_MUSIC_SOUND, event.currentTarget.value);
-    });
-
-    html.find("button[data-action='final-blow']").on("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const root = getHtmlRootElement(html);
-      const attackerUuid = root?.querySelector("select[name='finalBlowAttacker']")?.value;
-      const loserUuid = root?.querySelector("select[name='finalBlowLoser']")?.value;
-      await playFinalBlowScene(attackerUuid, loserUuid);
     });
 
     html.find(".vs-config-entry").on("click", (event) => {

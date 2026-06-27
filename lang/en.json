@@ -44,10 +44,6 @@
   "44s-vso.config.music": "Overlay music",
   "44s-vso.config.noMusic": "No music",
   "44s-vso.config.noSound": "Choose a sound",
-  "44s-vso.config.finalBlow": "Final blow",
-  "44s-vso.config.finalBlowAttacker": "Winner",
-  "44s-vso.config.finalBlowLoser": "Loser",
-  "44s-vso.config.finalBlowPlay": "Play scene",
   "44s-vso.config.names": "Names",
   "44s-vso.config.namePosition": "Name position",
   "44s-vso.config.namePositionBottom": "Bottom",
@@ -72,7 +68,5 @@
   "44s-vso.imageAdjust.saveFailed": "I could not save the image adjustment.",
   "44s-vso.config.dropHint": "Drag actors, tokens, or combatants here",
   "44s-vso.config.hiddenSuffix": " (hidden)",
-  "44s-vso.notifications.dropReadFailed": "I could not read that dropped item for 44's VSO.",
-  "44s-vso.notifications.finalBlowNeedsOverlay": "The overlay must be visible to play the final blow.",
-  "44s-vso.notifications.finalBlowNeedsTargets": "Choose two different characters for the final blow."
+  "44s-vso.notifications.dropReadFailed": "I could not read that dropped item for 44's VSO."
 }
