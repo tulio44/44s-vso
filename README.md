@@ -10,10 +10,13 @@
 
 - Fighting game-inspired VS overlay for active combat scenes.
 - Separate ally and enemy columns controlled by the GM.
+- Persistent overlay mode or one-shot combat intro mode with configurable timing.
 - Per-actor image framing with zoom, position, and flip controls.
+- Custom display names, hidden names, and top/bottom name placement.
 - Player-owned actors can adjust their own overlay portrait.
 - Defeated/recovered visual states for combatants.
-- Hide, reveal, remove, and reorder entries from the configuration panel.
+- Hide, reveal, remove, drag, drop, and reorder entries from the configuration panel.
+- Optional overlay music that starts with the VS overlay from a selected Foundry playlist and sound.
 - English and Brazilian Portuguese localization.
 
 ## Installation
@@ -28,9 +31,11 @@ After installing, enable **44's VSO** in your world modules.
 
 ## Usage
 
-The GM can open the 44's VSO controls from the Token scene controls. Use the configuration window to assign combatants to each side, hide or reveal entries, and manage defeated states.
+The GM can open the 44's VSO controls from the Token scene controls. Use the configuration window to assign combatants to each side, drag actors/tokens/combatants into the lineup, hide or reveal entries, reorder them, and manage defeated states.
 
-Players with ownership of an actor can open that actor's sheet and use the VS image adjustment control to frame their own portrait for the overlay.
+The configuration window also includes **Overlay music**. Choose a Foundry playlist and one sound from that playlist to have the GM client start that track whenever the VS overlay appears. The module stops the selected track when the overlay is removed, disabled, or finishes its intro sequence.
+
+Players with ownership of an actor can open that actor's sheet and use the VS image adjustment control to frame their own portrait for the overlay, set a display name, and hide or show that name.
 
 ## Compatibility
 
